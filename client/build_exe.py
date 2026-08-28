@@ -39,11 +39,9 @@ cmd = [
     "--include-module=client.api",
     "--include-module=client.ui.main_window",
     "--include-module=client.ui.history_panel",
-    "--include-module=client.ui.form_panel",
+    "--include-module=client.ui.chat_panel",
     "--include-module=client.ui.dialog",
-    "--include-module=client.ui.widgets.ai_input_widget",
-    "--include-module=client.ui.widgets.chat_bubble",
-    "--include-module=client.ui.widgets.file_display_widget",
+    "--include-module=client.ui.widgets.chat_message",
     "--include-module=client.resources",
     os.path.join(CLIENT_DIR, "main.py"),
 ]
