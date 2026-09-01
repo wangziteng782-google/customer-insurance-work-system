@@ -30,6 +30,7 @@ class MainWindow(QMainWindow):
 
         # 右侧聊天面板
         self.chat_panel = ChatPanel()
+        self.chat_panel.task_created.connect(self._on_task_created)
         layout.addWidget(self.chat_panel, 1)
 
         self.setCentralWidget(central)
@@ -44,3 +45,7 @@ class MainWindow(QMainWindow):
     def _on_history_item_clicked(self, task: dict | None) -> None:
         """历史记录点击 - 切换到对应任务"""
         self.chat_panel.set_current_task(task)
+
+    def _on_task_created(self, task_id: str) -> None:
+        """新任务创建 - 刷新左侧列表"""
+        self.history_panel.refresh()

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, BigInteger, String, Text, DateTime, func, JSON
+from sqlalchemy import Column, BigInteger, String, Text, DateTime, func, JSON, Integer
 
 from cit_api.model.new_policy_model import Base
 
@@ -14,4 +14,5 @@ class ChatMessage(Base):
     insurance_company = Column(String(50), nullable=True, comment="保险公司")
     file_paths = Column(JSON, nullable=True, comment="附件路径列表")
     creator = Column(String(50), nullable=True, comment="创建人")
+    user_id = Column(Integer, nullable=True, comment="创建人ID")
     created_at = Column(DateTime, server_default=func.now(), comment="创建时间")

@@ -103,7 +103,9 @@ def list_chat_messages(task_id: str) -> list[dict]:
 
 def create_chat_message(task_id: str, content: str, msg_type: str = "user",
                         file_paths: list[str] | None = None,
-                        creator: str | None = None) -> dict:
+                        creator: str | None = None,
+                        user_id: int | None = None,
+                        insurance_company: str | None = None) -> dict:
     """新增一条聊天记录"""
     payload = {
         "task_id": task_id,
@@ -111,6 +113,8 @@ def create_chat_message(task_id: str, content: str, msg_type: str = "user",
         "msg_type": msg_type,
         "file_paths": file_paths,
         "creator": creator,
+        "user_id": user_id,
+        "insurance_company": insurance_company,
     }
     resp = requests.post(f"{BASE_URL}/api/chat/messages", json=payload, timeout=5)
     resp.raise_for_status()

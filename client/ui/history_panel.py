@@ -1,15 +1,25 @@
 """左侧历史记录面板 - 保单卡片列表 + 分页"""
-import json
-
 from PySide6.QtWidgets import QVBoxLayout, QHBoxLayout, QLabel, QWidget, QSizePolicy
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt
 from qfluentwidgets import PushButton, ScrollArea, SearchLineEdit
 
 from client.api import list_chat_tasks
 
+# ── 设计令牌 ──
+_PRIMARY = "#1677ff"        # 蓝色 - 主色
+_ACCENT = "#d4a853"         # 金色 - 选中/强调
+_BG_SIDEBAR = "#f5f6f8"     # 侧栏背景
+_BG_CARD = "#ffffff"        # 卡片背景
+_BG_HOVER = "#f8f9fa"       # 悬停背景
+_TEXT_PRIMARY = "#1a1a2e"   # 主文字
+_TEXT_SECONDARY = "#6b7280" # 次文字
+_TEXT_MUTED = "#9ca3af"     # 弱化文字
+_BADGE_BG = "#e8f4ff"       # 徽标背景
+_BADGE_TEXT = "#1677ff"     # 徽标文字
+
 
 class PolicyCardItem(QWidget):
-    """保单卡片项 - 参考豆包风格"""
+    """任务卡片项 - 左侧历史列表"""
 
     def __init__(self, task: dict, is_selected: bool = False, parent=None):
         super().__init__(parent)
@@ -21,71 +31,88 @@ class PolicyCardItem(QWidget):
 
     def _init_ui(self) -> None:
         self.setCursor(Qt.PointingHandCursor)
-        self.setMinimumHeight(64)
+        self.setMinimumHeight(72)
+        self.setMaximumHeight(90)
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 8, 10, 8)
-        layout.setSpacing(3)
+        # 主布局：左侧色条 + 内容
+        main_layout = QHBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
 
-        # 第一行：任务编号
-        task_id = self._task.get("task_id", "未知任务")
-        self.title_label = QLabel(task_id)
-        self.title_label.setStyleSheet("font-size: 14px; font-weight: 600; color: #1d2129;")
+        # 左侧选中指示条（金色签名元素）
+        self.indicator = QWidget()
+        self.indicator.setFixedWidth(3)
+        main_layout.addWidget(self.indicator)
+
+        # 内容区
+        content = QWidget()
+        content_layout = QVBoxLayout(content)
+        content_layout.setContentsMargins(14, 10, 14, 10)
+        content_layout.setSpacing(5)
+
+        # 第一行：保险公司（主标题）+ 消息数徽标
+        top_row = QHBoxLayout()
+        top_row.setContentsMargins(0, 0, 0, 0)
+        top_row.setSpacing(8)
+
+        insurance_company = self._task.get("insurance_company", "")
+        first_content = self._task.get("first_content", "")
+
+        # 主标题
+        title_text = insurance_company if insurance_company else (first_content[:15] if first_content else "新任务")
+        self.title_label = QLabel(title_text)
+        self.title_label.setStyleSheet(f"font-size: 14px; font-weight: 600; color: {_TEXT_PRIMARY};")
         self.title_label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
-        layout.addWidget(self.title_label)
+        top_row.addWidget(self.title_label)
+        top_row.addStretch()
+
+        # 消息数圆形徽标
+        msg_count = self._task.get("msg_count", 0)
+        count_badge = QLabel(f"{msg_count}")
+        count_badge.setFixedSize(20, 20)
+        count_badge.setAlignment(Qt.AlignCenter)
+        count_badge.setStyleSheet(f"""
+            font-size: 11px;
+            font-weight: bold;
+            color: {_BADGE_TEXT};
+            background-color: {_BADGE_BG};
+            border-radius: 10px;
+        """)
+        top_row.addWidget(count_badge)
+        content_layout.addLayout(top_row)
 
         # 第二行：首条消息摘要
-        first_content = self._task.get("first_content", "无内容")
-        sub_label = QLabel(first_content)
-        sub_label.setStyleSheet("font-size: 12px; color: #666;")
-        sub_label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
-        layout.addWidget(sub_label)
+        if first_content and first_content != insurance_company:
+            sub_label = QLabel(first_content)
+            sub_label.setStyleSheet(f"font-size: 12px; color: {_TEXT_SECONDARY};")
+            sub_label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+            content_layout.addWidget(sub_label)
 
-        # 第三行：日期 + 消息数
+        # 第三行：日期
         bottom_row = QHBoxLayout()
         bottom_row.setContentsMargins(0, 0, 0, 0)
-        bottom_row.setSpacing(4)
 
         created = self._task.get("created_at", "")
-        date_str = created[:10] if created else "-"
+        date_str = str(created)[:19].replace("T", " ") if created else "-"
         date_label = QLabel(date_str)
-        date_label.setStyleSheet("font-size: 11px; color: #999;")
+        date_label.setStyleSheet(f"font-size: 11px; color: {_TEXT_MUTED};")
         bottom_row.addWidget(date_label)
         bottom_row.addStretch()
+        content_layout.addLayout(bottom_row)
 
-        # 消息数标签
-        msg_count = self._task.get("msg_count", 0)
-        count_tag = QLabel(f"{msg_count}条")
-        count_tag.setStyleSheet("""
-            font-size: 11px;
-            color: #1677ff;
-            border: 1px solid #1677ff;
-            border-radius: 4px;
-            padding: 1px 4px;
-        """)
-        bottom_row.addWidget(count_tag)
-        layout.addLayout(bottom_row)
+        main_layout.addWidget(content, 1)
 
     def _update_style(self) -> None:
         if self._is_selected:
-            self.setStyleSheet("""
-                QWidget {
-                    background-color: #f0f7ff;
-                    border: 1px solid #1677ff;
-                    border-radius: 8px;
-                }
+            self.indicator.setStyleSheet(f"background-color: {_ACCENT}; border-radius: 2px;")
+            self.setStyleSheet(f"""
+                QWidget {{ background-color: #f0f7ff; border-radius: 8px; }}
             """)
         else:
-            self.setStyleSheet("""
-                QWidget {
-                    background-color: #ffffff;
-                    border: 1px solid #e5e7eb;
-                    border-radius: 8px;
-                }
-                QWidget:hover {
-                    background-color: #f7f8fa;
-                    border-color: #d9d9d9;
-                }
+            self.indicator.setStyleSheet("background-color: transparent;")
+            self.setStyleSheet(f"""
+                QWidget {{ background-color: {_BG_CARD}; border-radius: 8px; }}
+                QWidget:hover {{ background-color: {_BG_HOVER}; }}
             """)
 
     def set_selected(self, selected: bool) -> None:
@@ -109,7 +136,7 @@ class HistoryPanel(QWidget):
     def __init__(self, on_item_clicked, parent: QWidget | None = None):
         super().__init__(parent)
         self._on_item_clicked = on_item_clicked
-        self._policies: list[dict] = []
+        self._tasks: list[dict] = []
         self._cards: list[PolicyCardItem] = []
         self._selected_index: int = -1
         self._current_page: int = 0
@@ -118,8 +145,8 @@ class HistoryPanel(QWidget):
         self._load_history()
 
     def _init_ui(self) -> None:
-        self.setFixedWidth(260)
-        self.setStyleSheet("background-color: #f7f8fa; border-right: 1px solid #e5e7eb;")
+        self.setFixedWidth(240)
+        self.setStyleSheet(f"background-color: {_BG_SIDEBAR}; border-right: 1px solid #e5e7eb;")
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -127,26 +154,26 @@ class HistoryPanel(QWidget):
 
         # 标题栏
         title_bar = QHBoxLayout()
-        title_bar.setContentsMargins(12, 10, 12, 8)
+        title_bar.setContentsMargins(10, 10, 10, 8)
         title_label = QLabel("保单列表")
-        title_label.setStyleSheet("font-size: 16px; font-weight: bold; color: #1a1a1a;")
+        title_label.setStyleSheet(f"font-size: 15px; font-weight: bold; color: {_PRIMARY}; letter-spacing: 0.5px;")
         title_bar.addWidget(title_label)
         title_bar.addStretch()
 
         # 刷新按钮
         refresh_btn = PushButton("↻", self)
-        refresh_btn.setFixedSize(30, 30)
+        refresh_btn.setFixedSize(26, 26)
         refresh_btn.setToolTip("刷新列表")
-        refresh_btn.setStyleSheet("""
-            PushButton {
-                background-color: #e2e8f0;
-                color: #4a5568;
+        refresh_btn.setStyleSheet(f"""
+            PushButton {{
+                background-color: {_BADGE_BG};
+                color: {_PRIMARY};
                 border: none;
                 border-radius: 6px;
-                font-size: 15px;
+                font-size: 14px;
                 font-weight: bold;
-            }
-            PushButton:hover { background-color: #cbd5e0; }
+            }}
+            PushButton:hover {{ background-color: #d6eaff; }}
         """)
         refresh_btn.clicked.connect(self.refresh)
         title_bar.addWidget(refresh_btn)
@@ -157,7 +184,7 @@ class HistoryPanel(QWidget):
         search_row.setContentsMargins(8, 0, 8, 6)
         self.search_box = SearchLineEdit(self)
         self.search_box.setPlaceholderText("搜索保单...")
-        self.search_box.setFixedHeight(30)
+        self.search_box.setFixedHeight(28)
         self.search_box.textChanged.connect(self._on_search)
         search_row.addWidget(self.search_box)
         layout.addLayout(search_row)
@@ -166,13 +193,13 @@ class HistoryPanel(QWidget):
         self.scroll_area = ScrollArea()
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.scroll_area.setStyleSheet("background-color: #f7f8fa; border: none;")
+        self.scroll_area.setStyleSheet(f"background-color: {_BG_SIDEBAR}; border: none;")
 
         self.container = QWidget()
-        self.container.setStyleSheet("background-color: #f7f8fa;")
+        self.container.setStyleSheet(f"background-color: {_BG_SIDEBAR};")
         self.container_layout = QVBoxLayout(self.container)
-        self.container_layout.setContentsMargins(6, 4, 6, 6)
-        self.container_layout.setSpacing(6)
+        self.container_layout.setContentsMargins(4, 2, 4, 4)
+        self.container_layout.setSpacing(5)
         self.container_layout.addStretch()
 
         self.scroll_area.setWidget(self.container)
@@ -181,45 +208,46 @@ class HistoryPanel(QWidget):
         # 底部提示
         hint = QLabel("点击切换保单上下文")
         hint.setAlignment(Qt.AlignCenter)
-        hint.setStyleSheet("font-size: 11px; color: #c0c4cc; padding: 4px;")
+        hint.setStyleSheet(f"font-size: 10px; color: {_TEXT_MUTED}; padding: 3px;")
         layout.addWidget(hint)
 
         # 分页控制
         page_bar = QHBoxLayout()
         page_bar.setContentsMargins(8, 4, 8, 6)
+        page_bar.setSpacing(4)
         self.prev_btn = PushButton("<", self)
-        self.prev_btn.setFixedSize(28, 24)
-        self.prev_btn.setStyleSheet("""
-            PushButton {
-                background-color: #ffffff;
-                color: #666;
+        self.prev_btn.setFixedSize(26, 22)
+        self.prev_btn.setStyleSheet(f"""
+            PushButton {{
+                background-color: {_BG_CARD};
+                color: {_TEXT_SECONDARY};
                 border: 1px solid #d9d9d9;
                 border-radius: 4px;
-                font-size: 11px;
-            }
-            PushButton:hover { color: #1677ff; border-color: #1677ff; }
-            PushButton:disabled { color: #ccc; border-color: #eee; }
+                font-size: 10px;
+            }}
+            PushButton:hover {{ color: {_PRIMARY}; border-color: {_PRIMARY}; }}
+            PushButton:disabled {{ color: #ccc; border-color: #eee; }}
         """)
         self.prev_btn.clicked.connect(self._on_prev_page)
         page_bar.addWidget(self.prev_btn)
 
         self.page_label = QLabel("1/1")
         self.page_label.setAlignment(Qt.AlignCenter)
-        self.page_label.setStyleSheet("font-size: 12px; color: #888;")
+        self.page_label.setStyleSheet(f"font-size: 11px; color: {_TEXT_SECONDARY};")
         page_bar.addWidget(self.page_label, 1)
 
         self.next_btn = PushButton(">", self)
-        self.next_btn.setFixedSize(28, 24)
-        self.next_btn.setStyleSheet("""
-            PushButton {
-                background-color: #ffffff;
-                color: #666;
+        self.next_btn.setFixedSize(26, 22)
+        self.next_btn.setStyleSheet(f"""
+            PushButton {{
+                background-color: {_BG_CARD};
+                color: {_TEXT_SECONDARY};
                 border: 1px solid #d9d9d9;
                 border-radius: 4px;
-                font-size: 11px;
-            }
-            PushButton:hover { color: #1677ff; border-color: #1677ff; }
-            PushButton:disabled { color: #ccc; border-color: #eee; }
+                font-size: 10px;
+            }}
+            PushButton:hover {{ color: {_PRIMARY}; border-color: {_PRIMARY}; }}
+            PushButton:disabled {{ color: #ccc; border-color: #eee; }}
         """)
         self.next_btn.clicked.connect(self._on_next_page)
         page_bar.addWidget(self.next_btn)
@@ -277,7 +305,7 @@ class HistoryPanel(QWidget):
     def _update_page_label(self) -> None:
         self.page_label.setText(f"{self._current_page + 1}/{self._page_count}")
         self.prev_btn.setEnabled(self._current_page > 0)
-        has_next = len(self._policies) >= self.PAGE_SIZE
+        has_next = len(self._tasks) >= self.PAGE_SIZE
         self.next_btn.setEnabled(has_next)
 
     def _on_prev_page(self) -> None:
@@ -286,7 +314,7 @@ class HistoryPanel(QWidget):
             self._load_history()
 
     def _on_next_page(self) -> None:
-        if len(self._policies) >= self.PAGE_SIZE:
+        if len(self._tasks) >= self.PAGE_SIZE:
             self._current_page += 1
             self._load_history()
 

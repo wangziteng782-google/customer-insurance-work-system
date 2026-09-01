@@ -12,6 +12,7 @@ class ChatMessageCreateDTO(BaseModel):
     insurance_company: Optional[str] = None
     file_paths: Optional[list[str]] = None
     creator: Optional[str] = None
+    user_id: Optional[int] = None
 
 
 class ChatMessageOutDTO(BaseModel):
@@ -22,6 +23,7 @@ class ChatMessageOutDTO(BaseModel):
     msg_type: str
     file_paths: Optional[list[str]] = None
     creator: Optional[str] = None
+    creator_name: Optional[str] = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
@@ -32,5 +34,7 @@ class ChatTaskOutDTO(BaseModel):
     task_id: str
     first_content: str
     msg_count: int
+    insurance_company: Optional[str] = None
     creator: Optional[str] = None
+    creator_name: Optional[str] = None
     created_at: datetime

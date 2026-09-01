@@ -1,27 +1,90 @@
 """聊天面板 - 顶部状态栏 + 消息列表 + 输入区（含快捷标签）"""
 import os
+import tempfile
 from datetime import datetime
 
 from PySide6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QTextEdit, QLabel,
-    QWidget, QScrollArea, QFileDialog, QFrame, QSizePolicy
+    QWidget, QScrollArea, QFileDialog, QFrame, QSizePolicy,
+    QApplication
 )
 from PySide6.QtCore import Signal, Qt, QTimer
-from PySide6.QtGui import QDragEnterEvent, QDropEvent
+from PySide6.QtGui import QDragEnterEvent, QDropEvent, QTextCursor, QKeySequence
 from qfluentwidgets import PushButton, ScrollArea
 
 from client.api import create_chat_message, list_chat_messages, upload_files
 from client.ui.widgets.chat_message import ChatMessage
-from client.ui.dialog import warning_dialog, error_dialog
+
+# ── 设计令牌 ──
+_PRIMARY = "#1677ff"        # 蓝色 - 主色
+_ACCENT = "#d4a853"         # 金色 - 强调
+_PRIMARY_LIGHT = "#e8f4ff"  # 浅蓝背景
+_TOP_BG = "#f8f9fa"         # 顶部栏背景
+_BORDER = "#e5e7eb"         # 边框
+_TEXT_PRIMARY = "#1a1a2e"   # 主文字
+_TEXT_SECONDARY = "#6b7280" # 次文字
+_TAG_SELECTED_BG = "#e8f4ff"
+_TAG_SELECTED_TEXT = "#1677ff"
+_TAG_SELECTED_BORDER = "#1677ff"
+_TAG_BG = "#f5f5f5"
+_TAG_TEXT = "#555555"
+_TAG_BORDER = "#e0e0e0"
+
+
+class ImageTextEdit(QTextEdit):
+    """支持拖拽和粘贴图片的文本输入框"""
+    image_dropped = Signal(str)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAcceptDrops(True)
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+        else:
+            super().dragEnterEvent(event)
+
+    def dropEvent(self, event):
+        if event.mimeData().hasUrls():
+            for url in event.mimeData().urls():
+                path = url.toLocalFile()
+                if path and os.path.isfile(path):
+                    self.image_dropped.emit(path)
+            event.acceptProposedAction()
+        else:
+            super().dropEvent(event)
+
+    def keyPressEvent(self, event):
+        if event.matches(QKeySequence.Paste):
+            clipboard = QApplication.clipboard()
+            mime = clipboard.mimeData()
+            if mime.hasImage():
+                pixmap = clipboard.pixmap()
+                if not pixmap.isNull():
+                    tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+                    pixmap.save(tmp.name, "PNG")
+                    self.image_dropped.emit(tmp.name)
+                    return
+            elif mime.hasUrls():
+                for url in mime.urls():
+                    path = url.toLocalFile()
+                    if path and os.path.isfile(path):
+                        self.image_dropped.emit(path)
+                return
+        super().keyPressEvent(event)
 
 
 class ChatPanel(QWidget):
     """聊天面板 - 对话式保单资料收集"""
 
-    # 快捷标签
+    # 新建任务时发射，携带 task_id
+    task_created = Signal(str)
+
+    # 快捷标签（保险公司）
     QUICK_TAGS = [
-        "人保财险", "平安保险", "太平洋保险", "国寿财险", "阳光保险",
-        "电梯责任险", "公众责任险", "雇主责任险",
+        "人保财险", "平安保险", "太平洋保险", "国寿财险",
+        "阳光保险", "新华保险", "泰康保险", "太平保险",
     ]
 
     def __init__(self, parent: QWidget | None = None):
@@ -46,13 +109,13 @@ class ChatPanel(QWidget):
         self.scroll_area = ScrollArea()
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.scroll_area.setStyleSheet("background-color: #ffffff; border: none;")
+        self.scroll_area.setStyleSheet("background-color: #fafafa; border: none;")
 
         self.msg_container = QWidget()
-        self.msg_container.setStyleSheet("background-color: #ffffff;")
+        self.msg_container.setStyleSheet("background-color: #fafafa;")
         self.msg_layout = QVBoxLayout(self.msg_container)
-        self.msg_layout.setContentsMargins(16, 16, 16, 16)
-        self.msg_layout.setSpacing(14)
+        self.msg_layout.setContentsMargins(20, 16, 20, 16)
+        self.msg_layout.setSpacing(12)
         self.msg_layout.addStretch()
 
         self.scroll_area.setWidget(self.msg_container)
@@ -71,47 +134,47 @@ class ChatPanel(QWidget):
     def _create_top_bar(self) -> QWidget:
         """创建顶部状态栏"""
         bar = QWidget()
-        bar.setFixedHeight(48)
-        bar.setStyleSheet("background-color: #f0f7ff; border-bottom: 1px solid #e5e7eb;")
+        bar.setFixedHeight(44)
+        bar.setStyleSheet(f"background-color: {_TOP_BG}; border-bottom: 1px solid {_BORDER};")
 
         layout = QHBoxLayout(bar)
         layout.setContentsMargins(16, 0, 16, 0)
 
         # 当前保单名称
         self.policy_name_label = QLabel("当前保单：未选择")
-        self.policy_name_label.setStyleSheet("font-size: 14px; font-weight: bold; color: #1d2129;")
+        self.policy_name_label.setStyleSheet(f"font-size: 13px; font-weight: bold; color: {_PRIMARY};")
         layout.addWidget(self.policy_name_label)
 
         layout.addSpacing(16)
 
         # 创建日期
         self.date_label = QLabel("创建日期：-")
-        self.date_label.setStyleSheet("font-size: 13px; color: #606266;")
+        self.date_label.setStyleSheet(f"font-size: 12px; color: {_TEXT_SECONDARY};")
         layout.addWidget(self.date_label)
 
         layout.addSpacing(16)
 
         # 图片计数
         self.img_count_label = QLabel("已收集图片：0 张")
-        self.img_count_label.setStyleSheet("font-size: 13px; color: #606266;")
+        self.img_count_label.setStyleSheet(f"font-size: 12px; color: {_TEXT_SECONDARY};")
         layout.addWidget(self.img_count_label)
 
         layout.addStretch()
 
         # 开启新保单按钮
         new_btn = PushButton("开启新保单收集", self)
-        new_btn.setFixedSize(140, 32)
-        new_btn.setStyleSheet("""
-            PushButton {
-                background-color: #1677ff;
+        new_btn.setFixedSize(130, 30)
+        new_btn.setStyleSheet(f"""
+            PushButton {{
+                background-color: {_PRIMARY};
                 color: white;
                 border: none;
                 border-radius: 6px;
-                font-size: 13px;
+                font-size: 12px;
                 font-weight: bold;
-            }
-            PushButton:hover { background-color: #4096ff; }
-            PushButton:pressed { background-color: #0958d9; }
+            }}
+            PushButton:hover {{ background-color: #4096ff; }}
+            PushButton:pressed {{ background-color: #0958d9; }}
         """)
         new_btn.clicked.connect(self._on_new_policy)
         layout.addWidget(new_btn)
@@ -121,7 +184,7 @@ class ChatPanel(QWidget):
     def _create_input_area(self) -> QWidget:
         """创建输入区域（含预览、文本框、快捷标签、按钮）"""
         wrapper = QWidget()
-        wrapper.setStyleSheet("background-color: #ffffff; border-top: 1px solid #e5e7eb;")
+        wrapper.setStyleSheet(f"background-color: #ffffff; border-top: 1px solid {_BORDER};")
         outer = QVBoxLayout(wrapper)
         outer.setContentsMargins(16, 8, 16, 12)
         outer.setSpacing(6)
@@ -129,12 +192,12 @@ class ChatPanel(QWidget):
         # 输入框容器（带拖拽）
         self.input_frame = QFrame()
         self.input_frame.setAcceptDrops(True)
-        self.input_frame.setStyleSheet("""
-            QFrame {
-                border: 1px solid #d9d9d9;
-                border-radius: 12px;
+        self.input_frame.setStyleSheet(f"""
+            QFrame {{
+                border: 1px solid {_BORDER};
+                border-radius: 10px;
                 background-color: #ffffff;
-            }
+            }}
         """)
         self.input_frame.dragEnterEvent = self._on_drag_enter
         self.input_frame.dropEvent = self._on_drop
@@ -152,19 +215,20 @@ class ChatPanel(QWidget):
         self.preview_layout.setAlignment(Qt.AlignLeft)
         frame_layout.addWidget(self.preview_wrap)
 
-        # 文本输入框
-        self.text_edit = QTextEdit()
-        self.text_edit.setPlaceholderText("输入文字，拖拽/选择多张图片，点击发送统一上传")
-        self.text_edit.setMinimumHeight(60)
-        self.text_edit.setMaximumHeight(120)
-        self.text_edit.setStyleSheet("""
-            QTextEdit {
+        # 文本输入框（支持拖拽图片 + 粘贴图片）
+        self.text_edit = ImageTextEdit(self)
+        self.text_edit.setPlaceholderText("输入文字，拖拽/粘贴图片，点击发送")
+        self.text_edit.setMinimumHeight(56)
+        self.text_edit.setMaximumHeight(110)
+        self.text_edit.image_dropped.connect(self._on_image_pasted)
+        self.text_edit.setStyleSheet(f"""
+            QTextEdit {{
                 border: none;
                 padding: 10px 14px;
-                font-size: 14px;
-                color: #1d2129;
+                font-size: 13px;
+                color: {_TEXT_PRIMARY};
                 background: transparent;
-            }
+            }}
         """)
         frame_layout.addWidget(self.text_edit)
 
@@ -172,14 +236,14 @@ class ChatPanel(QWidget):
         quick_bar = QWidget()
         quick_bar.setStyleSheet("border-top: 1px solid #f0f0f0;")
         quick_layout = QHBoxLayout(quick_bar)
-        quick_layout.setContentsMargins(12, 6, 12, 6)
-        quick_layout.setSpacing(8)
+        quick_layout.setContentsMargins(12, 5, 12, 5)
+        quick_layout.setSpacing(6)
         quick_layout.setAlignment(Qt.AlignLeft)
 
         for tag in self.QUICK_TAGS:
             tag_btn = PushButton(tag, self)
-            tag_btn.setFixedHeight(28)
-            tag_btn.setMinimumWidth(70)
+            tag_btn.setFixedHeight(26)
+            tag_btn.setMinimumWidth(66)
             tag_btn.setStyleSheet(self._tag_style(selected=False))
             tag_btn.clicked.connect(lambda checked=False, t=tag: self._on_quick_tag(t))
             self._tag_buttons.append(tag_btn)
@@ -197,35 +261,35 @@ class ChatPanel(QWidget):
 
         # 上传按钮
         upload_btn = PushButton("上传图片", self)
-        upload_btn.setFixedSize(72, 30)
-        upload_btn.setStyleSheet("""
-            PushButton {
+        upload_btn.setFixedSize(70, 28)
+        upload_btn.setStyleSheet(f"""
+            PushButton {{
                 background-color: transparent;
-                color: #606266;
-                border: 1px solid #d9d9d9;
+                color: {_TEXT_SECONDARY};
+                border: 1px solid {_BORDER};
                 border-radius: 6px;
-                font-size: 13px;
-            }
-            PushButton:hover { color: #1677ff; border-color: #1677ff; }
+                font-size: 12px;
+            }}
+            PushButton:hover {{ color: {_PRIMARY}; border-color: {_PRIMARY}; }}
         """)
         upload_btn.clicked.connect(self._on_upload)
         btn_row.addWidget(upload_btn)
 
         # 发送按钮
         send_btn = PushButton("发送", self)
-        send_btn.setFixedSize(60, 30)
-        send_btn.setStyleSheet("""
-            PushButton {
-                background-color: #1677ff;
+        send_btn.setFixedSize(58, 28)
+        send_btn.setStyleSheet(f"""
+            PushButton {{
+                background-color: {_PRIMARY};
                 color: white;
                 border: none;
                 border-radius: 6px;
-                font-size: 13px;
+                font-size: 12px;
                 font-weight: bold;
-            }
-            PushButton:hover { background-color: #4096ff; }
-            PushButton:pressed { background-color: #0958d9; }
-            PushButton:disabled { background-color: #a0c4ff; }
+            }}
+            PushButton:hover {{ background-color: #4096ff; }}
+            PushButton:pressed {{ background-color: #0958d9; }}
+            PushButton:disabled {{ background-color: #a0c4ff; }}
         """)
         send_btn.clicked.connect(self._on_send)
         btn_row.addWidget(send_btn)
@@ -237,10 +301,10 @@ class ChatPanel(QWidget):
 
     # ── 消息操作 ──
 
-    def _add_message(self, content: str, msg_type: str = "user") -> None:
+    def _add_message(self, content: str, msg_type: str = "user",
+                     file_paths: list[str] | None = None) -> None:
         """添加一条消息到列表"""
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
-        msg = ChatMessage(content=content, msg_type=msg_type, timestamp=timestamp)
+        msg = ChatMessage(content=content, msg_type=msg_type, file_paths=file_paths)
         # 插入到 stretch 之前
         self.msg_layout.insertWidget(self.msg_layout.count() - 1, msg)
         # 滚动到底部
@@ -251,17 +315,13 @@ class ChatPanel(QWidget):
         scrollbar = self.scroll_area.verticalScrollBar()
         scrollbar.setValue(scrollbar.maximum())
 
-    def add_user_message(self, text: str) -> None:
+    def add_user_message(self, text: str, file_paths: list[str] | None = None) -> None:
         """添加用户消息"""
-        self._add_message(text, "user")
+        self._add_message(text, "user", file_paths=file_paths)
 
-    def add_system_message(self, text: str) -> None:
+    def add_system_message(self, text: str, file_paths: list[str] | None = None) -> None:
         """添加系统消息"""
-        self._add_message(text, "system")
-
-    def add_ai_message(self, text: str) -> None:
-        """添加 AI 消息"""
-        self._add_message(text, "bot")
+        self._add_message(text, "system", file_paths=file_paths)
 
     def clear_messages(self) -> None:
         """清空所有消息"""
@@ -276,36 +336,36 @@ class ChatPanel(QWidget):
     def _tag_style(selected: bool) -> str:
         """快捷标签样式 - 选中/未选中"""
         if selected:
-            return """
-                PushButton {
-                    background-color: #e8f4ff;
-                    color: #1677ff;
-                    border: 1px solid #1677ff;
-                    border-radius: 14px;
-                    font-size: 13px;
+            return f"""
+                PushButton {{
+                    background-color: {_TAG_SELECTED_BG};
+                    color: {_TAG_SELECTED_TEXT};
+                    border: 1px solid {_TAG_SELECTED_BORDER};
+                    border-radius: 13px;
+                    font-size: 12px;
                     font-weight: 500;
                     padding: 0 12px;
-                }
-                PushButton:hover {
+                }}
+                PushButton:hover {{
                     background-color: #d6eaff;
-                    color: #1677ff;
-                }
+                    color: {_TAG_SELECTED_TEXT};
+                }}
             """
         else:
-            return """
-                PushButton {
-                    background-color: #f5f5f5;
-                    color: #555;
-                    border: 1px solid #e0e0e0;
-                    border-radius: 14px;
-                    font-size: 13px;
+            return f"""
+                PushButton {{
+                    background-color: {_TAG_BG};
+                    color: {_TAG_TEXT};
+                    border: 1px solid {_TAG_BORDER};
+                    border-radius: 13px;
+                    font-size: 12px;
                     padding: 0 12px;
-                }
-                PushButton:hover {
-                    background-color: #e8f4ff;
-                    color: #1677ff;
-                    border-color: #91caff;
-                }
+                }}
+                PushButton:hover {{
+                    background-color: {_PRIMARY_LIGHT};
+                    color: {_PRIMARY};
+                    border-color: {_PRIMARY};
+                }}
             """
 
     def _on_quick_tag(self, tag: str) -> None:
@@ -321,7 +381,6 @@ class ChatPanel(QWidget):
         self._update_tag_styles()
 
         # 替换输入框内容为当前选中标签，光标移到末尾
-        from PySide6.QtGui import QTextCursor
         self.text_edit.setPlainText(tag)
         self.text_edit.setFocus()
         cursor = self.text_edit.textCursor()
@@ -333,49 +392,75 @@ class ChatPanel(QWidget):
         for btn in self._tag_buttons:
             btn.setStyleSheet(self._tag_style(selected=(btn.text() == self._selected_tag)))
 
-    def _on_send(self) -> None:
-        """发送按钮"""
+    def _on_send(self) -> str | None:
+        """发送按钮，返回新建任务的 task_id（如果有）"""
         text = self.text_edit.toPlainText().strip()
         if not text and not self._files:
-            return
+            return None
 
-        # 添加用户消息到界面
-        if text:
-            self.add_user_message(text)
+        new_task_id = None
 
-        # 上传文件
+        # 上传文件（需要先有 task_id，如果没有先创建一个空任务）
         file_paths = []
-        if self._files and self._current_task_id:
+        if self._files:
+            # 如果有文件但还没有 task_id，先创建一个任务
+            if not self._current_task_id:
+                try:
+                    result = create_chat_message(
+                        task_id="",
+                        content="",
+                        msg_type="system",
+                        file_paths=None,
+                        user_id=2,
+                    )
+                    if result:
+                        self._current_task_id = result.get("task_id", "")
+                        new_task_id = self._current_task_id
+                except Exception as e:
+                    print(f"创建任务失败: {e}")
+                    return None
+
             try:
                 result = upload_files(self._current_task_id, self._files)
                 file_paths = result.get("file_paths", [])
             except Exception as e:
                 print(f"文件上传失败: {e}")
 
-        # 保存消息到后端
+        # 添加用户消息到界面（带图片缩略图）
+        if text or file_paths:
+            self.add_user_message(text, file_paths=file_paths if file_paths else None)
+
+        # 保存消息到后端（文字或文件）
         if text or file_paths:
             try:
-                create_chat_message(
+                result = create_chat_message(
                     task_id=self._current_task_id or "",
                     content=text,
                     msg_type="user",
                     file_paths=file_paths if file_paths else None,
+                    user_id=2,
+                    insurance_company=self._selected_tag,
                 )
-                # 如果是第一条消息，task_id 可能刚生成，更新当前 task_id
-                if not self._current_task_id:
-                    # 重新拉取任务列表获取新 task_id
-                    pass
+                if not self._current_task_id and result:
+                    self._current_task_id = result.get("task_id", "")
+                    new_task_id = self._current_task_id
             except Exception as e:
                 print(f"保存消息失败: {e}")
 
-        # 系统提示
-        if file_paths:
-            self.add_system_message(f"已上传 {len(file_paths)} 个文件")
+        # 通知外部有新任务创建
+        if new_task_id:
+            self.task_created.emit(new_task_id)
 
         # 清空输入
         self.text_edit.clear()
         self._files.clear()
         self._refresh_preview()
+
+    def _on_image_pasted(self, path: str) -> None:
+        """拖拽或粘贴的图片"""
+        if path not in self._files:
+            self._files.append(path)
+            self._refresh_preview()
 
     def _on_upload(self) -> None:
         """上传文件"""
@@ -394,21 +479,21 @@ class ChatPanel(QWidget):
     def _on_drag_enter(self, event: QDragEnterEvent) -> None:
         if event.mimeData().hasUrls():
             event.acceptProposedAction()
-            self.input_frame.setStyleSheet("""
-                QFrame {
-                    border: 2px solid #1677ff;
-                    border-radius: 12px;
-                    background-color: #f0f7ff;
-                }
+            self.input_frame.setStyleSheet(f"""
+                QFrame {{
+                    border: 2px solid {_PRIMARY};
+                    border-radius: 10px;
+                    background-color: {_PRIMARY_LIGHT};
+                }}
             """)
 
     def _on_drop(self, event: QDropEvent) -> None:
-        self.input_frame.setStyleSheet("""
-            QFrame {
-                border: 1px solid #d9d9d9;
-                border-radius: 12px;
+        self.input_frame.setStyleSheet(f"""
+            QFrame {{
+                border: 1px solid {_BORDER};
+                border-radius: 10px;
                 background-color: #ffffff;
-            }
+            }}
         """)
         if event.mimeData().hasUrls():
             for url in event.mimeData().urls():
@@ -435,15 +520,19 @@ class ChatPanel(QWidget):
             self._add_preview_item(idx, filepath)
 
     def _add_preview_item(self, idx: int, filepath: str) -> None:
-        """添加一个预览项"""
+        """添加一个预览项（带删除按钮）"""
         from PySide6.QtGui import QPixmap
 
-        item = QWidget()
-        item.setFixedSize(56, 56)
-        item.setStyleSheet("background-color: #f5f5f5; border-radius: 6px;")
+        # 容器
+        item = QFrame()
+        item.setFixedSize(60, 60)
+        item.setStyleSheet("background-color: #f5f5f5; border: none; border-radius: 6px;")
 
-        layout = QVBoxLayout(item)
-        layout.setContentsMargins(2, 2, 2, 2)
+        # 图片/文件名
+        content = QLabel(item)
+        content.setGeometry(4, 4, 52, 52)
+        content.setAlignment(Qt.AlignCenter)
+        content.setStyleSheet("border: none; background: transparent;")
 
         ext = os.path.splitext(filepath)[1].lower()
         image_exts = {'.png', '.jpg', '.jpeg', '.bmp', '.gif', '.webp'}
@@ -452,19 +541,41 @@ class ChatPanel(QWidget):
             pixmap = QPixmap(filepath)
             if not pixmap.isNull():
                 scaled = pixmap.scaled(52, 52, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
-                img_label = QLabel()
-                img_label.setPixmap(scaled)
-                img_label.setAlignment(Qt.AlignCenter)
-                img_label.setStyleSheet("border: none;")
-                layout.addWidget(img_label)
+                content.setPixmap(scaled)
+            else:
+                content.setText("图")
+                content.setStyleSheet("font-size: 10px; color: #999;")
         else:
             name = os.path.basename(filepath)
-            name_label = QLabel(name[:6])
-            name_label.setAlignment(Qt.AlignCenter)
-            name_label.setStyleSheet("font-size: 10px; color: #666; border: none;")
-            layout.addWidget(name_label)
+            content.setText(name[:6])
+            content.setStyleSheet("font-size: 10px; color: #666;")
+
+        # 删除按钮（右上角 ×）
+        del_btn = PushButton("×", item)
+        del_btn.setGeometry(44, -2, 18, 18)
+        del_btn.setStyleSheet("""
+            PushButton {
+                background-color: #ff4d4f;
+                color: white;
+                border: none;
+                border-radius: 9px;
+                font-size: 12px;
+                font-weight: bold;
+                padding: 0;
+            }
+            PushButton:hover {
+                background-color: #ff7875;
+            }
+        """)
+        del_btn.clicked.connect(lambda checked=False, i=idx: self._on_remove_file(i))
 
         self.preview_layout.addWidget(item)
+
+    def _on_remove_file(self, index: int) -> None:
+        """删除预览区的文件"""
+        if 0 <= index < len(self._files):
+            self._files.pop(index)
+            self._refresh_preview()
 
     def _on_new_policy(self) -> None:
         """开启新任务"""
@@ -481,8 +592,8 @@ class ChatPanel(QWidget):
             self._current_task_id = task.get("task_id", "")
             self.policy_name_label.setText(f"当前任务：{self._current_task_id}")
             created = task.get("created_at", "-")
-            if created and len(str(created)) >= 10:
-                created = str(created)[:10]
+            if created:
+                created = str(created)[:19].replace("T", " ")
             self.date_label.setText(f"创建日期：{created}")
             self.img_count_label.setText(f"消息数：{task.get('msg_count', 0)}")
             # 加载聊天记录
@@ -498,10 +609,11 @@ class ChatPanel(QWidget):
             for msg in messages:
                 content = msg.get("content", "")
                 msg_type = msg.get("msg_type", "user")
+                file_paths = msg.get("file_paths")
                 if msg_type == "user":
-                    self.add_user_message(content)
+                    self.add_user_message(content, file_paths=file_paths)
                 else:
-                    self.add_system_message(content)
+                    self.add_system_message(content, file_paths=file_paths)
         except Exception as e:
             print(f"加载聊天记录失败: {e}")
 

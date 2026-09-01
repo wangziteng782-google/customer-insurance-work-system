@@ -1,7 +1,8 @@
 from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from cit_api.model.message import ChatMessage
+from cit_api.model.user import User
 from cit_api.dto.message_dto import ChatMessageCreateDTO
 
 
@@ -17,6 +18,7 @@ class ChatMessageDAO:
             insurance_company=dto.insurance_company,
             file_paths=dto.file_paths,
             creator=dto.creator,
+            user_id=dto.user_id,
         )
         db.add(msg)
         db.commit()
@@ -28,13 +30,13 @@ class ChatMessageDAO:
         return (
             db.query(ChatMessage)
             .filter(ChatMessage.task_id == task_id)
-            .order_by(ChatMessage.created_at.asc())
+            .order_by(ChatMessage.created_at.desc())
             .all()
         )
 
     @staticmethod
     def list_tasks(db: Session, skip: int = 0, limit: int = 50) -> list[dict]:
-        """获取所有任务列表（去重，取最新消息）"""
+        """获取所有任务列表（去重，取最新消息 + 保险公司）"""
         subq = (
             db.query(
                 ChatMessage.task_id,
@@ -49,6 +51,7 @@ class ChatMessageDAO:
                 ChatMessage.task_id,
                 ChatMessage.content.label("first_content"),
                 ChatMessage.creator,
+                ChatMessage.user_id,
                 ChatMessage.created_at,
                 subq.c.msg_count,
             )
@@ -59,13 +62,33 @@ class ChatMessageDAO:
             .limit(limit)
             .all()
         )
+        # 取每个任务的保险公司（任意一条有 insurance_company 的消息）
+        task_ids = [r.task_id for r in results]
+        company_map = {}
+        if task_ids:
+            company_rows = (
+                db.query(
+                    ChatMessage.task_id,
+                    func.min(ChatMessage.insurance_company),
+                )
+                .filter(
+                    ChatMessage.task_id.in_(task_ids),
+                    ChatMessage.insurance_company.isnot(None),
+                )
+                .group_by(ChatMessage.task_id)
+                .all()
+            )
+            company_map = {r[0]: r[1] for r in company_rows}
+
         return [
             {
                 "task_id": r.task_id,
                 "first_content": r.first_content[:50] if r.first_content else "",
                 "creator": r.creator,
+                "user_id": r.user_id,
                 "created_at": r.created_at,
                 "msg_count": r.msg_count,
+                "insurance_company": company_map.get(r.task_id, ""),
             }
             for r in results
         ]
