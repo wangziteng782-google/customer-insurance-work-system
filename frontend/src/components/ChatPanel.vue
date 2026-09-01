@@ -105,6 +105,16 @@ function openPreview(url: string) {
 function closePreview() {
   previewImage.value = null;
 }
+
+// AI提取（前端样式预览，接口待接）
+function handleAiExtract(taskId: string) {
+  alert('AI智能提取功能开发中\n任务: ' + taskId);
+}
+
+// OCR识别（前端样式预览，接口待接）
+function handleOcr(taskId: string) {
+  alert('OCR图片识别功能开发中\n任务: ' + taskId);
+}
 </script>
 
 <template>
@@ -137,7 +147,6 @@ function closePreview() {
               <span class="meta-id">{{ task.task_id }}</span>
             </div>
             <div class="head-aside">
-              <span class="aside-name">{{ task.creator_name || task.creator || '-' }}</span>
               <span class="aside-time">{{ fmt(task.created_at) }}</span>
             </div>
           </div>
@@ -164,6 +173,39 @@ function closePreview() {
             </div>
           </div>
 
+          <!-- 状态流转 -->
+          <div class="card-status-bar">
+            <div class="status-flow">
+              <div class="status-step active">
+                <span class="step-dot"></span>
+                <span class="step-label">待处理</span>
+              </div>
+              <div class="status-line"></div>
+              <div class="status-step">
+                <span class="step-dot"></span>
+                <span class="step-label">处理中</span>
+              </div>
+              <div class="status-line"></div>
+              <div class="status-step">
+                <span class="step-dot"></span>
+                <span class="step-label">已完成</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 操作栏：AI提取 + OCR识别 -->
+          <div class="card-actions">
+            <button class="action-btn ai" @click="handleAiExtract(task.task_id)">
+              <span class="btn-icon">AI</span>
+              <span class="btn-text">智能提取</span>
+            </button>
+            <button class="action-btn ocr" @click="handleOcr(task.task_id)" :disabled="!getImageCount(task.task_id)">
+              <span class="btn-icon">OCR</span>
+              <span class="btn-text">图片识别</span>
+              <span v-if="getImageCount(task.task_id)" class="btn-badge">{{ getImageCount(task.task_id) }}</span>
+            </button>
+          </div>
+
           <!-- 沟通记录 -->
           <div class="card-records">
             <div class="records-head">
@@ -183,21 +225,25 @@ function closePreview() {
 
             <!-- 记录横向排列 -->
             <div v-else class="record-row">
-              <div v-for="msg in getPagedMessages(task.task_id)" :key="msg.id" class="record-card">
+              <!-- 图片类型记录 -->
+              <div v-for="msg in getPagedMessages(task.task_id).filter(m => m.file_paths?.filter(isImage).length)" :key="msg.id" class="record-card image-card">
+                <img
+                  :src="fileUrl(msg.file_paths.filter(isImage)[0])"
+                  class="rc-img-full"
+                  @click="openPreview(fileUrl(msg.file_paths.filter(isImage)[0]))"
+                />
+                <div class="rc-img-overlay">
+                  <span class="rc-creator">{{ msg.creator_name || msg.creator || '匿名' }}</span>
+                  <span class="rc-time">{{ fmt(msg.created_at) }}</span>
+                </div>
+              </div>
+              <!-- 文字类型记录 -->
+              <div v-for="msg in getPagedMessages(task.task_id).filter(m => !m.file_paths?.filter(isImage).length)" :key="msg.id" class="record-card text-card">
                 <div class="rc-head">
                   <span class="rc-creator">{{ msg.creator_name || msg.creator || '匿名' }}</span>
                 </div>
-                <div class="rc-time">{{ fmt(msg.created_at) }}</div>
                 <div v-if="msg.content" class="rc-content">{{ msg.content }}</div>
-                <div v-if="msg.file_paths?.filter(isImage).length" class="rc-images">
-                  <img
-                    v-for="(p, i) in msg.file_paths.filter(isImage)"
-                    :key="i"
-                    :src="fileUrl(p)"
-                    class="rc-img"
-                    @click="openPreview(fileUrl(p))"
-                  />
-                </div>
+                <div class="rc-time-bottom">{{ fmt(msg.created_at) }}</div>
               </div>
             </div>
 
@@ -339,11 +385,6 @@ function closePreview() {
   gap: 14px;
 }
 
-.aside-name {
-  font-size: 15px;
-  color: #6b7280;
-}
-
 .aside-time {
   font-size: 14px;
   color: #9ca3af;
@@ -351,7 +392,7 @@ function closePreview() {
 
 /* 信息面板 */
 .card-info {
-  padding: 14px 24px 14px 28px;
+  padding: 10px 24px 10px 28px;
   border-bottom: 1px solid #f0f2f5;
   background: #fafbfc;
 }
@@ -386,11 +427,161 @@ function closePreview() {
   font-weight: 600;
 }
 
+/* 状态流转条 */
+.card-status-bar {
+  padding: 10px 24px 10px 28px;
+  border-bottom: 1px solid #f0f2f5;
+  background: #fff;
+}
+
+.status-flow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+}
+
+.status-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  position: relative;
+}
+
+.step-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid #d9d9d9;
+  background: #fff;
+  transition: all 0.3s;
+}
+
+.status-step.active .step-dot {
+  border-color: #1677ff;
+  background: #1677ff;
+  box-shadow: 0 0 0 4px rgba(22, 119, 255, 0.15);
+}
+
+.status-step.done .step-dot {
+  border-color: #52c41a;
+  background: #52c41a;
+}
+
+.step-label {
+  font-size: 13px;
+  color: #9ca3af;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.status-step.active .step-label {
+  color: #1677ff;
+  font-weight: 600;
+}
+
+.status-step.done .step-label {
+  color: #52c41a;
+}
+
+.status-line {
+  flex: 1;
+  height: 2px;
+  background: #e8ecf0;
+  margin: 0 8px;
+  margin-bottom: 22px;
+  min-width: 40px;
+}
+
+.status-line.active {
+  background: linear-gradient(90deg, #1677ff, #69b1ff);
+}
+
+/* 操作栏 */
+.card-actions {
+  display: flex;
+  gap: 10px;
+  padding: 10px 24px 10px 28px;
+  border-bottom: 1px solid #f0f2f5;
+  background: #fafbfc;
+}
+
+.action-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: none;
+}
+
+.action-btn.ai {
+  background: linear-gradient(135deg, #1677ff, #4096ff);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(22, 119, 255, 0.25);
+}
+
+.action-btn.ai:hover {
+  box-shadow: 0 4px 12px rgba(22, 119, 255, 0.35);
+  transform: translateY(-1px);
+}
+
+.action-btn.ocr {
+  background: #fff;
+  color: #1677ff;
+  border: 1.5px solid #1677ff;
+}
+
+.action-btn.ocr:hover:not(:disabled) {
+  background: #e8f4ff;
+}
+
+.action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-icon {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.action-btn.ocr .btn-icon {
+  background: #e8f4ff;
+  color: #1677ff;
+}
+
+.btn-text {
+  font-weight: 500;
+}
+
+.btn-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.action-btn.ocr .btn-badge {
+  background: #1677ff;
+  color: #fff;
+}
+
 /* 沟通记录 */
 .card-records { padding: 0; }
 
 .records-head {
-  padding: 14px 24px 14px 28px;
+  padding: 10px 24px 10px 28px;
   border-bottom: 1px solid #f0f2f5;
   background: #fff;
 }
@@ -398,26 +589,26 @@ function closePreview() {
 .records-title {
   display: flex;
   align-items: center;
-  gap: 10px;
-  font-size: 16px;
+  gap: 8px;
+  font-size: 14px;
   font-weight: 600;
   color: #0f2b5c;
 }
 
 .title-bar {
   width: 3px;
-  height: 18px;
+  height: 14px;
   background: linear-gradient(180deg, #1677ff, #69b1ff);
   border-radius: 2px;
 }
 
 .records-count {
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 400;
   color: #9ca3af;
   background: #f0f2f5;
-  padding: 2px 10px;
-  border-radius: 10px;
+  padding: 1px 8px;
+  border-radius: 8px;
 }
 
 .records-loading {
@@ -446,70 +637,98 @@ function closePreview() {
 /* 提单记录 - 横向排列 */
 .record-row {
   display: flex;
-  gap: 12px;
-  padding: 16px 24px 16px 28px;
+  gap: 8px;
+  padding: 10px 24px 12px 28px;
   overflow-x: auto;
 }
 
-.record-card {
-  flex: 0 0 220px;
+/* 图片类型记录 - 大图铺满卡片 */
+.image-card {
+  flex: 0 0 140px;
+  height: 140px;
+  border-radius: 6px;
+  overflow: hidden;
+  position: relative;
+  cursor: pointer;
+}
+
+.rc-img-full {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform 0.3s;
+}
+
+.image-card:hover .rc-img-full {
+  transform: scale(1.05);
+}
+
+.rc-img-overlay {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 6px 8px;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.6));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.image-card .rc-creator {
+  font-size: 11px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.image-card .rc-time {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+/* 文字类型记录 */
+.text-card {
+  flex: 0 0 160px;
   background: #fafbfc;
   border: 1px solid #e8ecf0;
-  border-radius: 8px;
-  padding: 12px;
+  border-radius: 6px;
+  padding: 8px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 4px;
+  min-height: 80px;
 }
 
 .rc-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  gap: 6px;
 }
 
-.rc-creator {
-  font-size: 14px;
+.text-card .rc-creator {
+  font-size: 12px;
   font-weight: 600;
   color: #3a3a4a;
 }
 
-
-.rc-time {
-  font-size: 13px;
-  color: #9ca3af;
-}
-
 .rc-content {
-  font-size: 14px;
-  line-height: 1.6;
+  font-size: 12px;
+  line-height: 1.5;
   color: #3a3a4a;
+  flex: 1;
   display: -webkit-box;
-  -webkit-line-clamp: 3;
+  -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
   word-break: break-word;
 }
 
-.rc-images {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-.rc-img {
-  width: 56px;
-  height: 56px;
-  object-fit: cover;
-  border-radius: 6px;
-  border: 1px solid #e8ecf0;
-  cursor: pointer;
-  transition: border-color 0.2s;
-}
-
-.rc-img:hover {
-  border-color: #1677ff;
+.rc-time-bottom {
+  font-size: 10px;
+  color: #9ca3af;
+  text-align: right;
+  margin-top: auto;
 }
 
 .no-records {
