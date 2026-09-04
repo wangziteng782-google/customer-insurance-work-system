@@ -16,7 +16,7 @@ UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads")
 
 @router.post("/messages", response_model=ChatMessageOutDTO)
 def create_message(payload: ChatMessageCreateDTO, db: Session = Depends(get_db)):
-    """新增一条聊天记录（task_id 为空时自动创建新任务）"""
+    """新增一条聊天记录"""
     return ChatMessageService(db).create(payload)
 
 

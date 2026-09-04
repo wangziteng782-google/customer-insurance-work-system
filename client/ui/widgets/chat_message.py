@@ -11,10 +11,8 @@ from PySide6.QtGui import QPixmap
 from client.api import BASE_URL
 
 # ── 设计令牌 ──
-_PRIMARY = "#1677ff"        # 用户气泡 - 蓝色
-_USER_TEXT = "#ffffff"      # 用户文字
-_SYSTEM_BG = "#f2f3f5"      # 系统气泡背景
-_SYSTEM_TEXT = "#1a1a2e"    # 系统文字
+_PRIMARY = "#1677ff"        # 气泡 - 蓝色
+_USER_TEXT = "#ffffff"      # 文字
 
 
 class ChatMessage(QWidget):
@@ -25,13 +23,11 @@ class ChatMessage(QWidget):
     def __init__(
         self,
         content: str,
-        msg_type: str = "user",  # user | system
         file_paths: list[str] | None = None,
         parent: QWidget | None = None,
     ):
         super().__init__(parent)
         self._content = content
-        self._msg_type = msg_type
         self._file_paths = file_paths or []
         self._init_ui()
 
@@ -55,10 +51,7 @@ class ChatMessage(QWidget):
             text_label = QLabel(self._content)
             text_label.setWordWrap(True)
             text_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
-            if self._msg_type == "user":
-                text_label.setStyleSheet(f"font-size: 13px; line-height: 1.55; color: {_USER_TEXT}; background: transparent; border: none;")
-            else:
-                text_label.setStyleSheet(f"font-size: 13px; line-height: 1.55; color: {_SYSTEM_TEXT}; background: transparent; border: none;")
+            text_label.setStyleSheet(f"font-size: 13px; line-height: 1.55; color: {_USER_TEXT}; background: transparent; border: none;")
             layout.addWidget(text_label)
 
         # 图片缩略图
@@ -76,25 +69,30 @@ class ChatMessage(QWidget):
                 img_row.addWidget(more_label)
             layout.addLayout(img_row)
 
+        # 文件附件（非图片）
+        file_paths = [p for p in self._file_paths if not self._is_image(p)]
+        if file_paths:
+            file_row = QHBoxLayout()
+            file_row.setSpacing(4)
+            file_row.setAlignment(Qt.AlignLeft)
+            for path in file_paths[:3]:  # 最多显示3个
+                file_chip = self._make_file_chip(path)
+                file_row.addWidget(file_chip)
+            if len(file_paths) > 3:
+                more_label = QLabel(f"+{len(file_paths) - 3}")
+                more_label.setStyleSheet("font-size: 12px; color: #999; background: transparent;")
+                file_row.addWidget(more_label)
+            layout.addLayout(file_row)
+
         # 气泡样式
-        if self._msg_type == "user":
-            bubble.setStyleSheet(f"""
-                QWidget {{
-                    background-color: {_PRIMARY};
-                    border-radius: 12px 2px 12px 12px;
-                }}
-            """)
-            outer.addStretch()
-            outer.addWidget(bubble)
-        else:
-            bubble.setStyleSheet(f"""
-                QWidget {{
-                    background-color: {_SYSTEM_BG};
-                    border-radius: 2px 12px 12px 12px;
-                }}
-            """)
-            outer.addWidget(bubble)
-            outer.addStretch()
+        bubble.setStyleSheet(f"""
+            QWidget {{
+                background-color: {_PRIMARY};
+                border-radius: 12px 2px 12px 12px;
+            }}
+        """)
+        outer.addStretch()
+        outer.addWidget(bubble)
 
     def _is_image(self, path: str) -> bool:
         """判断路径是否为图片"""
@@ -126,6 +124,42 @@ class ChatMessage(QWidget):
 
         return label
 
+    def _make_file_chip(self, path: str) -> QWidget:
+        """创建文件标签（可点击打开）"""
+        from PySide6.QtWidgets import QVBoxLayout
+
+        chip = QWidget()
+        chip.setFixedSize(120, 56)
+        chip.setCursor(Qt.PointingHandCursor)
+        chip.setStyleSheet("""
+            QWidget { background-color: #ffffff; border: 1px solid #d9d9d9; border-radius: 6px; }
+            QWidget:hover { border-color: #1677ff; background-color: #f0f7ff; }
+        """)
+        chip.mousePressEvent = lambda e, p=path: os.startfile(self._to_url(p)) if e.button() == Qt.LeftButton else None
+
+        layout = QVBoxLayout(chip)
+        layout.setContentsMargins(4, 4, 4, 4)
+        layout.setSpacing(2)
+
+        # 文件类型图标
+        ext = os.path.splitext(path)[1].lower()
+        icon_map = {'.pdf': '📕', '.doc': '📘', '.docx': '📘', '.xls': '📗', '.xlsx': '📗', '.txt': '📄', '.csv': '📊'}
+        icon = icon_map.get(ext, '📎')
+
+        icon_label = QLabel(f"{icon} {ext.upper()[1:]}")
+        icon_label.setAlignment(Qt.AlignCenter)
+        icon_label.setStyleSheet("font-size: 11px; font-weight: bold; color: #1677ff; border: none; background: transparent;")
+        layout.addWidget(icon_label)
+
+        # 文件名
+        name = os.path.basename(path)
+        name_label = QLabel(name[:12] + ('…' if len(name) > 12 else ''))
+        name_label.setAlignment(Qt.AlignCenter)
+        name_label.setStyleSheet("font-size: 9px; color: #666; border: none; background: transparent;")
+        layout.addWidget(name_label)
+
+        return chip
+
     @staticmethod
     def _placeholder(label: QLabel) -> QLabel:
         """占位符"""
@@ -140,6 +174,33 @@ class ChatMessage(QWidget):
             return path
         # 相对路径 → 拼接 BASE_URL
         return f"{BASE_URL}/{path.lstrip('/')}"
+
+    @staticmethod
+    def _download_file(path: str) -> None:
+        """下载文件到本地下载目录"""
+        url = ChatMessage._to_url(path)
+        try:
+            resp = requests.get(url, timeout=10)
+            if resp.status_code != 200:
+                return
+            # 下载目录
+            download_dir = os.path.join(os.path.expanduser("~"), "Downloads")
+            os.makedirs(download_dir, exist_ok=True)
+            filename = os.path.basename(path)
+            filepath = os.path.join(download_dir, filename)
+            # 重名加序号
+            if os.path.exists(filepath):
+                name, ext = os.path.splitext(filename)
+                i = 1
+                while os.path.exists(os.path.join(download_dir, f"{name}({i}){ext}")):
+                    i += 1
+                filepath = os.path.join(download_dir, f"{name}({i}){ext}")
+            with open(filepath, "wb") as f:
+                f.write(resp.content)
+            # 打开文件所在文件夹
+            os.startfile(os.path.dirname(filepath))
+        except Exception as e:
+            print(f"下载文件失败: {e}")
 
     @staticmethod
     def _download(url: str) -> str | None:

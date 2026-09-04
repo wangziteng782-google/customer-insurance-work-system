@@ -1,8 +1,7 @@
 from sqlalchemy import func
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session
 
-from cit_api.model.message import ChatMessage
-from cit_api.model.user import User
+from cit_api.model.model import ChatMessage, InsuranceTask, User
 from cit_api.dto.message_dto import ChatMessageCreateDTO
 
 
@@ -14,8 +13,6 @@ class ChatMessageDAO:
         msg = ChatMessage(
             task_id=dto.task_id,
             content=dto.content,
-            msg_type=dto.msg_type,
-            insurance_company=dto.insurance_company,
             file_paths=dto.file_paths,
             creator=dto.creator,
             user_id=dto.user_id,
@@ -36,59 +33,54 @@ class ChatMessageDAO:
 
     @staticmethod
     def list_tasks(db: Session, skip: int = 0, limit: int = 50) -> list[dict]:
-        """获取所有任务列表（去重，取最新消息 + 保险公司）"""
-        subq = (
-            db.query(
-                ChatMessage.task_id,
-                func.count(ChatMessage.id).label("msg_count"),
-                func.max(ChatMessage.created_at).label("latest_at"),
-            )
-            .group_by(ChatMessage.task_id)
-            .subquery()
-        )
-        results = (
-            db.query(
-                ChatMessage.task_id,
-                ChatMessage.content.label("first_content"),
-                ChatMessage.creator,
-                ChatMessage.user_id,
-                ChatMessage.created_at,
-                subq.c.msg_count,
-            )
-            .join(subq, ChatMessage.task_id == subq.c.task_id)
-            .filter(ChatMessage.created_at == subq.c.latest_at)
-            .order_by(subq.c.latest_at.desc())
+        """获取任务列表（直接从 insurance_tasks 查）"""
+        tasks = (
+            db.query(InsuranceTask)
+            .order_by(InsuranceTask.updated_at.desc())
             .offset(skip)
             .limit(limit)
             .all()
         )
-        # 取每个任务的保险公司（任意一条有 insurance_company 的消息）
-        task_ids = [r.task_id for r in results]
-        company_map = {}
+        # 统计每个任务的消息数
+        task_ids = [t.task_id for t in tasks]
+        msg_counts = {}
         if task_ids:
-            company_rows = (
+            rows = (
                 db.query(
                     ChatMessage.task_id,
-                    func.min(ChatMessage.insurance_company),
+                    func.count(ChatMessage.id),
                 )
-                .filter(
-                    ChatMessage.task_id.in_(task_ids),
-                    ChatMessage.insurance_company.isnot(None),
-                )
+                .filter(ChatMessage.task_id.in_(task_ids))
                 .group_by(ChatMessage.task_id)
                 .all()
             )
-            company_map = {r[0]: r[1] for r in company_rows}
+            msg_counts = {r[0]: r[1] for r in rows}
 
         return [
             {
-                "task_id": r.task_id,
-                "first_content": r.first_content[:50] if r.first_content else "",
-                "creator": r.creator,
-                "user_id": r.user_id,
-                "created_at": r.created_at,
-                "msg_count": r.msg_count,
-                "insurance_company": company_map.get(r.task_id, ""),
+                "task_id": t.task_id,
+                "status": t.status,
+                "business_type": t.business_type,
+                "insurance_company": t.insurance_company,
+                "customer_company": t.customer_company,
+                "creator": t.creator,
+                "user_id": t.user_id,
+                "operator": t.operator,
+                "operator_id": t.operator_id,
+                "msg_count": msg_counts.get(t.task_id, 0),
+                "created_at": t.created_at,
+                "updated_at": t.updated_at,
             }
-            for r in results
+            for t in tasks
         ]
+
+    @staticmethod
+    def get_or_create_task(db: Session, task_id: str, **kwargs) -> InsuranceTask:
+        """获取或创建任务"""
+        task = db.query(InsuranceTask).filter(InsuranceTask.task_id == task_id).first()
+        if not task:
+            task = InsuranceTask(task_id=task_id, **kwargs)
+            db.add(task)
+            db.commit()
+            db.refresh(task)
+        return task

@@ -1,21 +1,26 @@
 // API 客户端 - 与后端 FastAPI 通信
-const BASE_URL = 'http://localhost:8000';
+const BASE_URL = 'http://192.168.1.9:8000';
 
 export interface ChatTask {
   task_id: string;
-  first_content: string;
-  msg_count: number;
+  status: number;       // 0待处理/1处理中/2已完成/3已关闭
+  business_type: number | null;  // 1=新投 / 2=批改
   insurance_company: string | null;
+  customer_company: string | null;
   creator: string | null;
   creator_name: string | null;
+  user_id: number | null;
+  operator: string | null;
+  operator_id: number | null;
+  msg_count: number;
   created_at: string;
+  updated_at: string;
 }
 
 export interface ChatMessage {
   id: number;
   task_id: string;
   content: string;
-  msg_type: 'user' | 'system';
   file_paths: string[] | null;
   creator: string | null;
   creator_name: string | null;
@@ -57,4 +62,25 @@ export function extractInsuranceCompany(content: string): string | null {
     if (content.includes(company)) return company;
   }
   return null;
+}
+
+// ── 用户（伪登录） ──
+export interface AppUser {
+  id: number;
+  username: string;
+  display_name: string | null;
+  role: number | string | null;
+}
+
+export async function fetchUsers(): Promise<AppUser[]> {
+  const res = await fetch(`${BASE_URL}/api/users`);
+  if (!res.ok) throw new Error(`获取用户列表失败: ${res.status}`);
+  return res.json();
+}
+
+// AI提取保险信息
+export async function aiExtract(taskId: string): Promise<Record<string, any>> {
+  const res = await fetch(`${BASE_URL}/api/ai/extract?task_id=${taskId}`, { method: 'POST' });
+  if (!res.ok) throw new Error(`AI提取失败: ${res.status}`);
+  return res.json();
 }

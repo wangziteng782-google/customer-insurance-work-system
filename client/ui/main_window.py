@@ -15,7 +15,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("客服工单录入")
-        self.resize(1100, 680)
+        self.resize(1000, 620)
         self._setup_icon()
 
         # 主布局

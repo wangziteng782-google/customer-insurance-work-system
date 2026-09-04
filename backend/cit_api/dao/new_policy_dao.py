@@ -2,7 +2,7 @@ import json
 
 from sqlalchemy.orm import Session
 
-from cit_api.model.new_policy_model import NewPolicy
+from cit_api.model.model import NewPolicy
 from cit_api.dto.new_policy_dto import NewPolicyCreateDTO
 
 

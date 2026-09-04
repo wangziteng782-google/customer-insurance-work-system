@@ -1,15 +1,8 @@
-import secrets
-
 from sqlalchemy.orm import Session
 
 from cit_api.dao.message_dao import ChatMessageDAO
 from cit_api.dto.message_dto import ChatMessageCreateDTO, ChatMessageOutDTO, ChatTaskOutDTO
-from cit_api.model.user import User
-
-
-def _generate_task_id() -> str:
-    """生成随机任务编号，如 TK-A3F8C2"""
-    return "TK-" + secrets.token_hex(3).upper()
+from cit_api.model.model import User
 
 
 class ChatMessageService:
@@ -20,9 +13,16 @@ class ChatMessageService:
         self.dao = ChatMessageDAO()
 
     def create(self, dto: ChatMessageCreateDTO) -> ChatMessageOutDTO:
-        # 首次发消息（task_id 为空）→ 自动生成
-        if not dto.task_id:
-            dto.task_id = _generate_task_id()
+        # 首次发消息时创建 insurance_tasks 记录
+        self.dao.get_or_create_task(
+            self.db,
+            task_id=dto.task_id,
+            insurance_company=dto.insurance_company,
+            customer_company=dto.customer_company,
+            business_type=dto.business_type,
+            creator=dto.creator,
+            user_id=dto.user_id,
+        )
         msg = self.dao.create(self.db, dto)
         return ChatMessageOutDTO.model_validate(msg)
 

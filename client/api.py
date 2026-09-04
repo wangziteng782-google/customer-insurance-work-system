@@ -2,7 +2,7 @@
 import requests
 
 # 后端 API 地址，按实际部署修改
-BASE_URL = "http://127.0.0.1:8000"
+BASE_URL = "http://192.168.1.9:8000"
 
 
 def create_new_policy(data: dict) -> dict:
@@ -101,20 +101,23 @@ def list_chat_messages(task_id: str) -> list[dict]:
     return resp.json()
 
 
-def create_chat_message(task_id: str, content: str, msg_type: str = "user",
+def create_chat_message(task_id: str, content: str,
                         file_paths: list[str] | None = None,
                         creator: str | None = None,
                         user_id: int | None = None,
-                        insurance_company: str | None = None) -> dict:
+                        insurance_company: str | None = None,
+                        business_type: int | None = None,
+                        customer_company: str | None = None) -> dict:
     """新增一条聊天记录"""
     payload = {
         "task_id": task_id,
         "content": content,
-        "msg_type": msg_type,
         "file_paths": file_paths,
         "creator": creator,
         "user_id": user_id,
         "insurance_company": insurance_company,
+        "business_type": business_type,
+        "customer_company": customer_company,
     }
     resp = requests.post(f"{BASE_URL}/api/chat/messages", json=payload, timeout=5)
     resp.raise_for_status()

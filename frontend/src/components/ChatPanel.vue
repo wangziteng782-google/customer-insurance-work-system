@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue';
 import { fetchMessages, fileUrl, isImage, extractInsuranceCompany, type ChatTask, type ChatMessage } from '../api';
+import AiExtractModal from './AiExtractModal.vue';
 
 const props = defineProps<{
   tasks: ChatTask[];
@@ -61,7 +62,7 @@ watch(() => props.tasks, async (tasks) => {
 }, { immediate: true, deep: true });
 
 function getCompany(task: ChatTask): string {
-  return task.insurance_company || extractInsuranceCompany(task.first_content) || '-';
+  return task.insurance_company || task.customer_company || '-';
 }
 
 function getPagedMessages(taskId: string) {
@@ -106,9 +107,13 @@ function closePreview() {
   previewImage.value = null;
 }
 
-// AI提取（前端样式预览，接口待接）
-function handleAiExtract(taskId: string) {
-  alert('AI智能提取功能开发中\n任务: ' + taskId);
+// AI提取弹窗
+const showExtractModal = ref(false);
+const currentExtractTask = ref<ChatTask | null>(null);
+
+function handleAiExtract(task: ChatTask) {
+  currentExtractTask.value = task;
+  showExtractModal.value = true;
 }
 
 // OCR识别（前端样式预览，接口待接）
@@ -143,7 +148,9 @@ function handleOcr(taskId: string) {
           <!-- 卡片头部 -->
           <div class="card-head">
             <div class="head-main">
-              <span class="company-name">{{ getCompany(task) }}</span>
+              <span class="company-name">{{ task.customer_company }}</span>
+              <span v-if="task.business_type === 1" class="type-badge new">新投</span>
+              <span v-else-if="task.business_type === 2" class="type-badge edit">批改</span>
               <span class="meta-id">{{ task.task_id }}</span>
             </div>
             <div class="head-aside">
@@ -195,7 +202,7 @@ function handleOcr(taskId: string) {
 
           <!-- 操作栏：AI提取 + OCR识别 -->
           <div class="card-actions">
-            <button class="action-btn ai" @click="handleAiExtract(task.task_id)">
+            <button class="action-btn ai" @click="handleAiExtract(task)">
               <span class="btn-icon">AI</span>
               <span class="btn-text">智能提取</span>
             </button>
@@ -225,26 +232,28 @@ function handleOcr(taskId: string) {
 
             <!-- 记录横向排列 -->
             <div v-else class="record-row">
-              <!-- 图片类型记录 -->
-              <div v-for="msg in getPagedMessages(task.task_id).filter(m => m.file_paths?.filter(isImage).length)" :key="msg.id" class="record-card image-card">
-                <img
-                  :src="fileUrl(msg.file_paths.filter(isImage)[0])"
-                  class="rc-img-full"
-                  @click="openPreview(fileUrl(msg.file_paths.filter(isImage)[0]))"
-                />
-                <div class="rc-img-overlay">
-                  <span class="rc-creator">{{ msg.creator_name || msg.creator || '匿名' }}</span>
-                  <span class="rc-time">{{ fmt(msg.created_at) }}</span>
+              <template v-for="msg in getPagedMessages(task.task_id)" :key="msg.id">
+                <!-- 该消息的所有图片 -->
+                <div v-for="(img, i) in (msg.file_paths?.filter(isImage) || [])" :key="'img-'+msg.id+'-'+i" class="record-card image-card">
+                  <img
+                    :src="fileUrl(img)"
+                    class="rc-img-full"
+                    @click="openPreview(fileUrl(img))"
+                  />
+                  <div class="rc-img-overlay">
+                    <span class="rc-creator">{{ msg.creator_name || msg.creator || '匿名' }}</span>
+                    <span class="rc-time">{{ fmt(msg.created_at) }}</span>
+                  </div>
                 </div>
-              </div>
-              <!-- 文字类型记录 -->
-              <div v-for="msg in getPagedMessages(task.task_id).filter(m => !m.file_paths?.filter(isImage).length)" :key="msg.id" class="record-card text-card">
-                <div class="rc-head">
-                  <span class="rc-creator">{{ msg.creator_name || msg.creator || '匿名' }}</span>
+                <!-- 该消息的文字 -->
+                <div v-if="msg.content" class="record-card text-card">
+                  <div class="rc-head">
+                    <span class="rc-creator">{{ msg.creator_name || msg.creator || '匿名' }}</span>
+                  </div>
+                  <div class="rc-content">{{ msg.content }}</div>
+                  <div class="rc-time-bottom">{{ fmt(msg.created_at) }}</div>
                 </div>
-                <div v-if="msg.content" class="rc-content">{{ msg.content }}</div>
-                <div class="rc-time-bottom">{{ fmt(msg.created_at) }}</div>
-              </div>
+              </template>
             </div>
 
             <!-- 无记录 -->
@@ -273,6 +282,14 @@ function handleOcr(taskId: string) {
       <button class="preview-close" @click="closePreview">✕</button>
       <img :src="previewImage" class="preview-img" @click.stop />
     </div>
+
+    <!-- AI提取弹窗 -->
+    <AiExtractModal
+      v-if="showExtractModal && currentExtractTask"
+      :task="currentExtractTask"
+      @close="showExtractModal = false"
+      @submitted="showExtractModal = false"
+    />
   </section>
 </template>
 
@@ -377,6 +394,21 @@ function handleOcr(taskId: string) {
   background: #f0f2f5;
   padding: 3px 10px;
   border-radius: 4px;
+}
+
+.type-badge {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+.type-badge.new {
+  background: #e8f4ff;
+  color: #1677ff;
+}
+.type-badge.edit {
+  background: #fff7e6;
+  color: #fa8c16;
 }
 
 .head-aside {

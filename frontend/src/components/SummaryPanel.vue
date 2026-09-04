@@ -89,7 +89,7 @@ async function runOcr() {
           <dt>总消息</dt>
           <dd>{{ messages.length }} 条</dd>
           <dt>保险公司</dt>
-          <dd>{{ primaryTask?.insurance_company || extractInsuranceCompany(primaryTask?.first_content || '') || '-' }}</dd>
+          <dd>{{ primaryTask?.insurance_company || primaryTask?.customer_company || '-' }}</dd>
           <dt>创建人</dt>
           <dd>{{ primaryTask?.creator_name || primaryTask?.creator || '-' }}</dd>
           <dt>图片数</dt>

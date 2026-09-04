@@ -15,7 +15,7 @@ const emit = defineEmits<{
 const companies = computed(() => {
   const map = new Map<string, { name: string; tasks: ChatTask[] }>();
   for (const t of tasks.value) {
-    const name = t.insurance_company || extractInsuranceCompany(t.first_content) || '未分类';
+    const name = t.insurance_company || t.customer_company || '未分类';
     if (!map.has(name)) map.set(name, { name, tasks: [] });
     map.get(name)!.tasks.push(t);
   }

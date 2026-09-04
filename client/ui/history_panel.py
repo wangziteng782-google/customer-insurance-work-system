@@ -31,8 +31,7 @@ class PolicyCardItem(QWidget):
 
     def _init_ui(self) -> None:
         self.setCursor(Qt.PointingHandCursor)
-        self.setMinimumHeight(72)
-        self.setMaximumHeight(90)
+        self.setMinimumHeight(60)
 
         # 主布局：左侧色条 + 内容
         main_layout = QHBoxLayout(self)
@@ -47,46 +46,37 @@ class PolicyCardItem(QWidget):
         # 内容区
         content = QWidget()
         content_layout = QVBoxLayout(content)
-        content_layout.setContentsMargins(14, 10, 14, 10)
-        content_layout.setSpacing(5)
+        content_layout.setContentsMargins(12, 8, 12, 8)
+        content_layout.setSpacing(4)
 
-        # 第一行：保险公司（主标题）+ 消息数徽标
-        top_row = QHBoxLayout()
-        top_row.setContentsMargins(0, 0, 0, 0)
-        top_row.setSpacing(8)
+        # 主标题：客户公司（必填，对话框已校验）
+        title_text = self._task["customer_company"]
 
-        insurance_company = self._task.get("insurance_company", "")
-        first_content = self._task.get("first_content", "")
-
-        # 主标题
-        title_text = insurance_company if insurance_company else (first_content[:15] if first_content else "新任务")
         self.title_label = QLabel(title_text)
-        self.title_label.setStyleSheet(f"font-size: 14px; font-weight: 600; color: {_TEXT_PRIMARY};")
-        self.title_label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
-        top_row.addWidget(self.title_label)
-        top_row.addStretch()
+        self.title_label.setWordWrap(True)
+        self.title_label.setStyleSheet(f"font-size: 13px; font-weight: 600; color: {_TEXT_PRIMARY};")
+        self.title_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.title_label.setAlignment(Qt.AlignTop)
+        content_layout.addWidget(self.title_label)
 
-        # 消息数圆形徽标
-        msg_count = self._task.get("msg_count", 0)
-        count_badge = QLabel(f"{msg_count}")
-        count_badge.setFixedSize(20, 20)
-        count_badge.setAlignment(Qt.AlignCenter)
-        count_badge.setStyleSheet(f"""
+        # 状态徽标
+        status_badge = QLabel("进行中")
+        status_badge.setAlignment(Qt.AlignCenter)
+        status_badge.setFixedHeight(20)
+        status_badge.setMinimumWidth(48)
+        status_badge.setStyleSheet(f"""
             font-size: 11px;
-            font-weight: bold;
-            color: {_BADGE_TEXT};
-            background-color: {_BADGE_BG};
-            border-radius: 10px;
+            font-weight: 600;
+            color: #fa8c16;
+            background-color: #fff7e6;
+            border-radius: 4px;
+            padding: 0 6px;
         """)
-        top_row.addWidget(count_badge)
-        content_layout.addLayout(top_row)
-
-        # 第二行：首条消息摘要
-        if first_content and first_content != insurance_company:
-            sub_label = QLabel(first_content)
-            sub_label.setStyleSheet(f"font-size: 12px; color: {_TEXT_SECONDARY};")
-            sub_label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
-            content_layout.addWidget(sub_label)
+        badge_row = QHBoxLayout()
+        badge_row.setContentsMargins(0, 0, 0, 0)
+        badge_row.addStretch()
+        badge_row.addWidget(status_badge)
+        content_layout.addLayout(badge_row)
 
         # 第三行：日期
         bottom_row = QHBoxLayout()
@@ -145,7 +135,7 @@ class HistoryPanel(QWidget):
         self._load_history()
 
     def _init_ui(self) -> None:
-        self.setFixedWidth(240)
+        self.setFixedWidth(260)
         self.setStyleSheet(f"background-color: {_BG_SIDEBAR}; border-right: 1px solid #e5e7eb;")
 
         layout = QVBoxLayout(self)
@@ -170,10 +160,11 @@ class HistoryPanel(QWidget):
                 color: {_PRIMARY};
                 border: none;
                 border-radius: 6px;
-                font-size: 14px;
+                font-size: 16px;
                 font-weight: bold;
             }}
             PushButton:hover {{ background-color: #d6eaff; }}
+            PushButton:pressed {{ background-color: #91caff; color: #0958d9; }}
         """)
         refresh_btn.clicked.connect(self.refresh)
         title_bar.addWidget(refresh_btn)
@@ -199,7 +190,7 @@ class HistoryPanel(QWidget):
         self.container.setStyleSheet(f"background-color: {_BG_SIDEBAR};")
         self.container_layout = QVBoxLayout(self.container)
         self.container_layout.setContentsMargins(4, 2, 4, 4)
-        self.container_layout.setSpacing(5)
+        self.container_layout.setSpacing(4)
         self.container_layout.addStretch()
 
         self.scroll_area.setWidget(self.container)
@@ -291,7 +282,7 @@ class HistoryPanel(QWidget):
             if keyword:
                 searchable = (
                     task.get("task_id", "").lower()
-                    + task.get("first_content", "").lower()
+                    + task.get("customer_company", "").lower()
                     + task.get("creator", "").lower()
                 )
                 if keyword not in searchable:

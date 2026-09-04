@@ -2,7 +2,7 @@ import json
 
 from sqlalchemy.orm import Session
 
-from cit_api.model.endorsement_model import Endorsement
+from cit_api.model.model import Endorsement
 from cit_api.dto.endorsement_dto import EndorsementCreateDTO
 
 
