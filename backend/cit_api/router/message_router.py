@@ -1,17 +1,19 @@
 import os
-from datetime import datetime
 
-from fastapi import APIRouter, Depends, File, Form, UploadFile
+from fastapi import APIRouter, Depends, File, Form, UploadFile, HTTPException
 from sqlalchemy.orm import Session
 
 from cit_api.database import get_db
 from cit_api.dto.message_dto import ChatMessageCreateDTO, ChatMessageOutDTO, ChatTaskOutDTO
 from cit_api.service.message_service import ChatMessageService
+from cit_api.util.qiniu import upload_file
 
 router = APIRouter(prefix="/api/chat", tags=["聊天记录"])
 
-# 文件存储根目录
-UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads")
+# 允许的扩展名
+ALLOWED_EXTS = {'.png', '.jpg', '.jpeg', '.bmp', '.gif', '.webp', '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.txt', '.csv'}
+# 文件大小限制 10MB
+MAX_FILE_SIZE = 10 * 1024 * 1024
 
 
 @router.post("/messages", response_model=ChatMessageOutDTO)
@@ -37,20 +39,22 @@ async def upload_files(
     task_id: str = Form(...),
     files: list[UploadFile] = File(...),
 ):
-    """上传附件/图片到本地"""
-    task_dir = os.path.join(UPLOAD_DIR, task_id)
-    os.makedirs(task_dir, exist_ok=True)
-
+    """上传附件/图片到七牛云"""
     saved_paths = []
     for file in files:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"{timestamp}_{file.filename}"
-        filepath = os.path.join(task_dir, filename)
+        content = await file.read()
 
-        with open(filepath, "wb") as f:
-            content = await file.read()
-            f.write(content)
+        # 大小校验
+        if len(content) > MAX_FILE_SIZE:
+            raise HTTPException(400, f"文件过大：{file.filename}，最大允许 10MB")
 
-        saved_paths.append(f"uploads/{task_id}/{filename}")
+        # 扩展名校验
+        ext = os.path.splitext(file.filename or "")[1].lower()
+        if ext not in ALLOWED_EXTS:
+            raise HTTPException(400, f"不支持的文件类型：{ext}")
+
+        # 上传到七牛云
+        url = upload_file(task_id, content, ext)
+        saved_paths.append(url)
 
     return {"file_paths": saved_paths}

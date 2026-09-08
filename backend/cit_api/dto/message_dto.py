@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict
 class ChatMessageCreateDTO(BaseModel):
     """新增聊天记录入参"""
     task_id: str  # 客户端生成
-    content: str
+    content: Optional[str] = None
     file_paths: Optional[list[str]] = None
     creator: Optional[str] = None
     user_id: Optional[int] = None

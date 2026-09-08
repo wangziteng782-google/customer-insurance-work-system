@@ -10,6 +10,12 @@ class Settings(BaseSettings):
     QWEN_API_URL: str = "https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation"
     QWEN_MODEL: str = "qwen-turbo"
 
+    # 七牛云配置
+    QINIU_ACCESS_KEY: str = "Rwoba5bAn0msGlZ6fr8JIZsYjk6vC3qwY38GYNUZ"
+    QINIU_SECRET_KEY: str = "Jo2APlhaa7m_wfqhJASd_0uV9Kg6wCfieZKgHL6n"
+    QINIU_BUCKET: str = "yiti-zt-price"
+    QINIU_DOMAIN: str = "http://price.yitipeijian.com"  # 例如 https://cdn.xxx.com
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

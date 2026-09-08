@@ -4,3 +4,5 @@ sqlalchemy>=2.0
 pymysql
 cryptography
 pydantic-settings
+qiniu
+bcrypt>=4.0

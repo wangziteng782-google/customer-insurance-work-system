@@ -16,6 +16,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("客服工单录入")
         self.resize(1000, 620)
+        self._current_user: dict | None = None
         self._setup_icon()
 
         # 主布局
@@ -34,6 +35,12 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.chat_panel, 1)
 
         self.setCentralWidget(central)
+
+    def set_current_user(self, user: dict):
+        """设置当前登录用户"""
+        self._current_user = user
+        display_name = user.get("display_name", user.get("username", ""))
+        self.setWindowTitle(f"客服工单录入 — {display_name}")
 
     def _setup_icon(self) -> None:
         icon_path = resource_path("logo.ico")

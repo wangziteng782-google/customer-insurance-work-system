@@ -1,27 +1,27 @@
 import os
 import sys
 
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QMainWindow, QStackedWidget
 from PySide6.QtGui import QIcon, QFont, QFontDatabase
 
 from client.resources import resource_path
 from client.ui.main_window import MainWindow
+from client.ui.login_page import LoginPage
 
 
 def _setup_font(app: QApplication) -> None:
     """设置全局字体：优先苹果风格字体"""
-    # 字体优先级：SF Pro → PingFang SC → Microsoft YaHei
     preferred_fonts = ["SF Pro Display", "SF Pro Text", "PingFang SC", "Microsoft YaHei", "Segoe UI"]
     available = QFontDatabase.families()
 
-    font_family = "Microsoft YaHei"  # 默认回退
+    font_family = "Microsoft YaHei"
     for name in preferred_fonts:
         if name in available:
             font_family = name
             break
 
     font = QFont(font_family)
-    font.setPointSize(13)  # 基础字号 13pt
+    font.setPointSize(13)
     font.setWeight(QFont.Normal)
     app.setFont(font)
 
@@ -35,27 +35,48 @@ def _set_app_id() -> None:
         )
 
 
+class App(QMainWindow):
+    """主应用窗口 — QStackedWidget 切换登录页和主界面"""
+
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("保险工单系统")
+        self.resize(1000, 620)
+
+        self.stack = QStackedWidget()
+        self.setCentralWidget(self.stack)
+
+        self.login_page = LoginPage()
+        self.main_window = MainWindow()
+
+        self.stack.addWidget(self.login_page)   # index 0
+        self.stack.addWidget(self.main_window)  # index 1
+
+        self.stack.setCurrentIndex(0)
+
+        self.login_page.login_success.connect(self._on_login_success)
+
+    def _on_login_success(self, user):
+        self.main_window.set_current_user(user)
+        self.stack.setCurrentIndex(1)
+
+
 def main():
-    # 必须在 QApplication 之前设置 AppID
     _set_app_id()
 
     app = QApplication(sys.argv)
 
-    # 设置全局字体
     _setup_font(app)
 
-    # Fluent 主题（自动跟随系统暗色/亮色）
     from qfluentwidgets import setTheme, Theme
     setTheme(Theme.AUTO)
 
-    # 设置窗口/任务栏图标（优先 logo.ico，回退 favicon.ico）
     icon_path = resource_path("logo.ico")
     if not os.path.exists(icon_path):
         icon_path = resource_path("favicon.ico")
     if os.path.exists(icon_path):
         app.setWindowIcon(QIcon(icon_path))
 
-    # 嵌入 pyside6-mcp bridge，让 AI 能连接并操控本应用
     try:
         from pyside6_mcp import install_bridge
         install_bridge()
@@ -63,7 +84,7 @@ def main():
     except ImportError:
         print("pyside6-mcp 未安装，跳过 bridge（不影响正常使用）")
 
-    window = MainWindow()
+    window = App()
     if os.path.exists(icon_path):
         window.setWindowIcon(QIcon(icon_path))
     window.show()

@@ -119,7 +119,10 @@ def create_chat_message(task_id: str, content: str,
         "business_type": business_type,
         "customer_company": customer_company,
     }
+    print(f"[API] 发送消息 payload={payload}")
     resp = requests.post(f"{BASE_URL}/api/chat/messages", json=payload, timeout=5)
+    if resp.status_code != 200:
+        print(f"[API] 响应 {resp.status_code}: {resp.text}")
     resp.raise_for_status()
     return resp.json()
 
@@ -143,4 +146,35 @@ def upload_files(task_id: str, file_paths: list[str]) -> dict:
     # 关闭文件
     for _, (_, f) in files:
         f.close()
+    return resp.json()
+
+
+# ── 用户认证 API ──
+
+def list_users() -> list[dict]:
+    """获取用户列表"""
+    resp = requests.get(f"{BASE_URL}/api/users", timeout=3)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def login(phone: str, password: str) -> dict:
+    """登录（手机号 + 密码）"""
+    resp = requests.post(
+        f"{BASE_URL}/api/users/login",
+        data={"phone": phone, "password": password},
+        timeout=5,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+def change_password(user_id: int, old_password: str, new_password: str) -> dict:
+    """修改密码"""
+    resp = requests.put(
+        f"{BASE_URL}/api/users/{user_id}/password",
+        data={"old_password": old_password, "new_password": new_password},
+        timeout=5,
+    )
+    resp.raise_for_status()
     return resp.json()

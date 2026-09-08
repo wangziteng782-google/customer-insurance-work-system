@@ -12,7 +12,7 @@ class ChatMessageDAO:
     def create(db: Session, dto: ChatMessageCreateDTO) -> ChatMessage:
         msg = ChatMessage(
             task_id=dto.task_id,
-            content=dto.content,
+            content=dto.content or "",
             file_paths=dto.file_paths,
             creator=dto.creator,
             user_id=dto.user_id,

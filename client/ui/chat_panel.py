@@ -30,14 +30,21 @@ _TEXT_SECONDARY = "#6b7280" # 次文字
 _NORMAL_INPUT_STYLE = f"""
     QFrame {{
         border: 1px solid {_BORDER};
-        border-radius: 10px;
+        border-radius: 12px;
+        background-color: #ffffff;
+    }}
+"""
+_FOCUS_INPUT_STYLE = f"""
+    QFrame {{
+        border: 1px solid {_PRIMARY};
+        border-radius: 12px;
         background-color: #ffffff;
     }}
 """
 _DRAG_INPUT_STYLE = f"""
     QFrame {{
         border: 2px solid {_PRIMARY};
-        border-radius: 10px;
+        border-radius: 12px;
         background-color: {_PRIMARY_LIGHT};
     }}
 """
@@ -165,6 +172,21 @@ class ImageTextEdit(QTextEdit):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setAcceptDrops(True)
+        self.on_send: callable = None  # 回车发送回调
+
+    def focusInEvent(self, event):
+        """聚焦时父框变主色"""
+        frame = self.parent()
+        if isinstance(frame, QFrame):
+            frame.setStyleSheet(_FOCUS_INPUT_STYLE)
+        super().focusInEvent(event)
+
+    def focusOutEvent(self, event):
+        """失焦恢复默认"""
+        frame = self.parent()
+        if isinstance(frame, QFrame):
+            frame.setStyleSheet(_NORMAL_INPUT_STYLE)
+        super().focusOutEvent(event)
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
@@ -183,6 +205,14 @@ class ImageTextEdit(QTextEdit):
             super().dropEvent(event)
 
     def keyPressEvent(self, event):
+        # 回车发送 / Ctrl+回车换行
+        if event.key() in (Qt.Key_Return, Qt.Key_Enter):
+            if event.modifiers() & Qt.ControlModifier:
+                self.insertPlainText("\n")
+                return
+            if self.on_send:
+                self.on_send()
+                return
         if event.matches(QKeySequence.Paste):
             clipboard = QApplication.clipboard()
             mime = clipboard.mimeData()
@@ -213,7 +243,7 @@ class ChatPanel(QWidget):
         self._files: list[str] = []
         self._current_task_id: str = ""
         self._insurance_company: str = ""
-        self._policy_type: str = "new"
+        self._policy_type: int = 1
         self._customer_company: str = ""
         self._init_ui()
 
@@ -252,8 +282,7 @@ class ChatPanel(QWidget):
 
         # 欢迎消息
         self._add_message(
-            "你好！可粘贴客户资料或拖拽图片到输入框，点击发送进行 AI 识别。",
-            "system"
+            "你好！可粘贴客户资料或拖拽图片到输入框，点击发送进行 AI 识别。"
         )
 
     def _create_top_bar(self) -> QWidget:
@@ -309,10 +338,29 @@ class ChatPanel(QWidget):
     def _create_input_area(self) -> QWidget:
         """创建输入区域（含预览、文本框、快捷标签、按钮）"""
         wrapper = QWidget()
-        wrapper.setStyleSheet(f"background-color: #ffffff; border-top: 1px solid {_BORDER};")
+        wrapper.setStyleSheet("background-color: #ffffff; border-top: 1px solid #f0f0f0;")
         outer = QVBoxLayout(wrapper)
         outer.setContentsMargins(16, 8, 16, 12)
         outer.setSpacing(6)
+
+        # 上传进度条（平时隐藏）
+        from PySide6.QtWidgets import QProgressBar
+        self.upload_progress = QProgressBar()
+        self.upload_progress.setMaximumHeight(3)
+        self.upload_progress.setTextVisible(False)
+        self.upload_progress.setRange(0, 0)  # 不定模式（转圈圈）
+        self.upload_progress.setStyleSheet(f"""
+            QProgressBar {{
+                border: none;
+                background: transparent;
+            }}
+            QProgressBar::chunk {{
+                background-color: {_PRIMARY};
+                border-radius: 1px;
+            }}
+        """)
+        self.upload_progress.hide()
+        outer.addWidget(self.upload_progress)
 
         # 输入框容器（带拖拽）
         self.input_frame = QFrame()
@@ -342,11 +390,12 @@ class ChatPanel(QWidget):
         frame_layout.addWidget(self.preview_wrap)
 
         # 文本输入框（支持拖拽图片 + 粘贴图片）
-        self.text_edit = ImageTextEdit(self)
+        self.text_edit = ImageTextEdit(self.input_frame)
         self.text_edit.setPlaceholderText("输入文字，拖拽/粘贴图片，点击发送")
         self.text_edit.setMinimumHeight(56)
         self.text_edit.setMaximumHeight(110)
         self.text_edit.image_dropped.connect(self._on_image_pasted)
+        self.text_edit.on_send = self._on_send
         self.text_edit.setStyleSheet(f"""
             QTextEdit {{
                 border: none;
@@ -354,6 +403,11 @@ class ChatPanel(QWidget):
                 font-size: 13px;
                 color: {_TEXT_PRIMARY};
                 background: transparent;
+                selection-background-color: {_PRIMARY};
+                selection-color: #ffffff;
+            }}
+            QTextEdit::placeholder {{
+                color: #c0c4cc;
             }}
         """)
         frame_layout.addWidget(self.text_edit)
@@ -377,7 +431,11 @@ class ChatPanel(QWidget):
                 border-radius: 6px;
                 font-size: 12px;
             }}
-            PushButton:hover {{ color: {_PRIMARY}; border-color: {_PRIMARY}; }}
+            PushButton:hover {{
+                color: {_PRIMARY};
+                border-color: {_PRIMARY};
+                background-color: {_PRIMARY_LIGHT};
+            }}
         """)
         upload_btn.clicked.connect(self._on_upload)
         btn_row.addWidget(upload_btn)
@@ -397,7 +455,7 @@ class ChatPanel(QWidget):
             }}
             PushButton:hover {{ background-color: #4096ff; }}
             PushButton:pressed {{ background-color: #0958d9; }}
-            PushButton:disabled {{ background-color: #a0c4ff; }}
+            PushButton:disabled {{ background-color: #d9d9d9; color: #999; }}
         """)
         send_btn.clicked.connect(self._on_send)
         btn_row.addWidget(send_btn)
@@ -468,11 +526,18 @@ class ChatPanel(QWidget):
         # 上传文件
         file_paths = []
         if self._files:
+            self.upload_progress.show()
+            self.upload_btn.setEnabled(False)
+            self.send_btn.setEnabled(False)
             try:
                 result = upload_files(self._current_task_id, self._files)
                 file_paths = result.get("file_paths", [])
             except Exception as e:
                 print(f"文件上传失败: {e}")
+            finally:
+                self.upload_progress.hide()
+                self.upload_btn.setEnabled(True)
+                self.send_btn.setEnabled(True)
 
         # 添加用户消息到界面（带图片缩略图）
         if text or file_paths:
@@ -524,7 +589,12 @@ class ChatPanel(QWidget):
             self._refresh_preview()
 
     def _set_drag_style(self, active: bool) -> None:
-        self.input_frame.setStyleSheet(_DRAG_INPUT_STYLE if active else _NORMAL_INPUT_STYLE)
+        if active:
+            self.input_frame.setStyleSheet(_DRAG_INPUT_STYLE)
+        else:
+            # 拖拽结束时，若输入框仍聚焦则恢复焦点样式
+            still_focus = self.text_edit.hasFocus()
+            self.input_frame.setStyleSheet(_FOCUS_INPUT_STYLE if still_focus else _NORMAL_INPUT_STYLE)
 
     def _on_drag_enter(self, event: QDragEnterEvent) -> None:
         if event.mimeData().hasUrls():
@@ -659,6 +729,9 @@ class ChatPanel(QWidget):
         """设置当前任务"""
         if task:
             self._current_task_id = task.get("task_id", "")
+            self._insurance_company = task.get("insurance_company", "") or ""
+            self._policy_type = task.get("business_type", 1) or 1
+            self._customer_company = task.get("customer_company", "") or ""
             insurance = task.get("insurance_company", "") or "-"
             customer = task.get("customer_company", "") or "-"
             self.policy_name_label.setText(f"{insurance} · {customer}")

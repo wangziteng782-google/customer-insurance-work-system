@@ -1,8 +1,10 @@
 import os
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 
 from cit_api.database import engine
 from cit_api.model.model import Base, ChatMessage  # noqa: F401  -- 确保模型被注册
@@ -35,6 +37,16 @@ app.include_router(endorsement_router)
 app.include_router(ai_router)
 app.include_router(message_router)
 app.include_router(user_router)
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """调试用：打印 422 时的请求体和校验错误"""
+    body = await request.body()
+    print(f"[422 DEBUG] {request.method} {request.url.path}")
+    print(f"[422 DEBUG] body={body.decode('utf-8', errors='replace')}")
+    print(f"[422 DEBUG] errors={exc.errors()}")
+    return JSONResponse(status_code=422, content={"detail": exc.errors()})
 
 
 @app.get("/")

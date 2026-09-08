@@ -68,7 +68,9 @@ class User(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     username = Column(String(50), nullable=False, unique=True)
     display_name = Column(String(50), nullable=True)
-    role = Column(String(20), default="staff")
+    phone = Column(String(20), nullable=True, comment="手机号")
+    password = Column(String(100), nullable=True, comment="密码（bcrypt哈希）")
+    role = Column(Integer, default=1, comment="0管理员/1客服(提单人)/2内勤(做单人)")
     created_at = Column(DateTime, server_default=func.now())
 
 
