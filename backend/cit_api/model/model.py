@@ -24,7 +24,7 @@ class InsuranceTask(Base):
 
     id = Column(BigInteger, primary_key=True, autoincrement=True, comment="主键")
     task_id = Column(String(32), nullable=False, unique=True, comment="任务ID")
-    status = Column(TINYINT, nullable=False, default=0, comment="0待处理/1处理中/2已完成/3已关闭")
+    status = Column(TINYINT, nullable=False, default=1, comment="1进行中/2待确认/3已做单/4已递交/5对公认款中/6二维码/7待补充/8已作废/9待递交")
     business_type = Column(TINYINT, nullable=True, comment="1新投/2批改")
     insurance_company = Column(String(50), nullable=True, comment="保险公司")
     customer_company = Column(String(100), nullable=True, comment="客户公司")
@@ -34,6 +34,18 @@ class InsuranceTask(Base):
     operator_id = Column(BigInteger, nullable=True, comment="做单员ID")
     created_at = Column(DateTime, server_default=func.now(), comment="创建时间")
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), comment="更新时间")
+
+
+class TaskComment(Base):
+    """任务留言表"""
+    __tablename__ = "task_comments"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    task_id = Column(String(32), nullable=False, index=True, comment="关联任务")
+    content = Column(Text, nullable=False, comment="留言内容")
+    author_name = Column(String(50), nullable=True, comment="内勤姓名")
+    author_id = Column(Integer, nullable=True, comment="内勤ID")
+    created_at = Column(DateTime, server_default=func.now())
 
 
 class NewPolicy(Base):

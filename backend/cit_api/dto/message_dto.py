@@ -30,6 +30,18 @@ class ChatMessageOutDTO(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class TaskCommentDTO(BaseModel):
+    """任务留言出参"""
+    id: int
+    task_id: str
+    content: str
+    author_name: Optional[str] = None
+    author_id: Optional[int] = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class ChatTaskOutDTO(BaseModel):
     """任务列表出参（左侧面板）"""
     task_id: str
@@ -45,3 +57,8 @@ class ChatTaskOutDTO(BaseModel):
     msg_count: int = 0
     created_at: datetime
     updated_at: datetime
+
+class StatusUpdateDTO(BaseModel):
+    """修改状态入参"""
+    status: int
+    reject_reason: str | None = None

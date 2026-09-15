@@ -1,0 +1,1569 @@
+{
+  "summary": {
+    "total": 45,
+    "passed": 45,
+    "failed": 0
+  },
+  "results": [
+    {
+      "name": "根路由重定向",
+      "method": "GET",
+      "path": "/",
+      "status": 200,
+      "expected": [
+        200,
+        307,
+        308
+      ],
+      "ok": true,
+      "duration_ms": 262.0,
+      "payload": "<!DOCTYPE html>\n<html lang=\"zh-CN\">\n<head>\n<meta charset=\"UTF-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n<title>易梯保险系统</title>\n<link rel=\"stylesheet\" href=\"css/style.css\">\n<script>\n  if (!localStorage.getItem('token')) location.href = 'login.html';\n</script>\n</head>\n<body>\n<div class=\"app\">\n\n  <aside class=\"sidebar\">\n    <div class=\"brand\">\n      <img class=\"brand-icon\" src=\"images/logo.png\" alt=\"Logo\">\n      <div>\n        <div class=\"brand-text\">易梯保险系统</div>\n      </div>\n    </div>\n    <div class=\"side-head\"><span>保险公司</span><span class=\"side-right\"><span class=\"side-count\" id=\"companyCount\">0 家</span><button class=\"refresh-btn\" id=\"refreshBtn\" title=\"刷新数据\" onclick=\"refreshData()\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><polyline points=\"23 4 23 10 17 10\"/><path d=\"M20.49 15a9 9 0 1 1-2.12-9.36L23 10\"/></svg></button></span></div>\n\n    <div class=\"company-list\">\n      <!-- 动态生成：由 renderSidebar() 根据任务数据渲染 -->\n    </div>\n  </aside>\n\n  <main class=\"main\">\n    <header class=\"page-head\">\n      <div>\n        <div class=\"breadcrumb\">工单管理 / <span id=\"companyTitle2\">平安保险</span></div>\n        <div class=\"title-row\">\n          <h1 id=\"companyTitle\">平安保险</h1>\n          <span class=\"meta-chip\" id=\"userTotal\">1 个用户</span>\n          <span class=\"meta-chip\" id=\"recordTotal\">1 条记录</span>\n        </div>\n      </div>\n      <div class=\"head-right-user\">\n        <div class=\"user-info\" id=\"userMenu\">\n          <div class=\"user-avatar\" id=\"headerAvatar\">步</div>\n          <div class=\"user-meta\">\n            <div class=\"user-name\" id=\"headerName\">小步</div>\n            <div class=\"user-role\" id=\"headerRole\">保险内勤</div>\n          </div>\n          <span class=\"user-status\" title=\"在线\"></span>\n          <svg class=\"user-chevron\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><polyline points=\"6 9 12 15 18 9\"/></svg>\n          <div class=\"user-dropdown\" id=\"userDropdown\">\n            <div class=\"dropdown-item\" onclick=\"openPasswordModal()\">修改密码</div>\n            <div class=\"dropdown-item dropdown-danger\" onclick=\"logout()\">退出登录</div>\n          </div>\n        </div>\n      </div>\n    </header>\n\n    <div class=\"filter-bar\">\n      <div class=\"filter-item\">\n        <span class=\"filter-label\">做单人员</span>\n        <div class=\"multi-select\" id=\"userSelect\">\n          <div class=\"multi-select-trigger\" onclick=\"toggleMultiPanel()\">\n            <span id=\"userSelectLabel\">全部</span>\n          </div>\n          <div class=\"multi-select-panel\" id=\"userSelectPanel\"></div>\n        </div>\n      </div>\n      <div class=\"filter-item\">\n        <span class=\"filter-label\">做单类型</span>\n        <select class=\"filter-select\" id=\"typeFilter\" onchange=\"render()\"><option value=\"\">全部</option><option value=\"新投\">新投</option><option value=\"批改\">批改</option></select>\n      </div>\n      <div class=\"filter-item status-filter-item\">\n        <span class=\"filter-label\">状态</span>\n        <div class=\"status-checkboxes\" id=\"statusFilter\">\n          <label class=\"st-cb\"><input type=\"checkbox\" value=\"1\" onchange=\"render()\"><span class=\"st-check\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"3\"><polyline points=\"20 6 9 17 4 12\"/></svg></span><span class=\"st-dot s-processing\"></span>进行中</label>\n          <label class=\"st-cb\"><input type=\"checkbox\" value=\"3\" onchange=\"render()\"><span class=\"st-check\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"3\"><polyline points=\"20 6 9 17 4 12\"/></svg></span><span class=\"st-dot s-done\"></span>已做单</label>\n          <label class=\"st-cb\"><input type=\"checkbox\" value=\"4\" onchange=\"render()\"><span class=\"st-check\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"3\"><polyline points=\"20 6 9 17 4 12\"/></svg></span><span class=\"st-dot s-teal\"></span>已递交</label>\n          <label class=\"st-cb\"><input type=\"checkbox\" value=\"5\" onchange=\"render()\"><span class=\"st-check\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"3\"><polyline points=\"20 6 9 17 4 12\"/></svg></span><span class=\"st-dot s-orange\"></span>对公认款中</label>\n          <label class=\"st-cb\"><input type=\"checkbox\" value=\"6\" onchange=\"render()\"><span class=\"st-check\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"3\"><polyline points=\"20 6 9 17 4 12\"/></svg></span><span class=\"st-dot s-purple\"></span>二维码</label>\n          <label class=\"st-cb\"><input type=\"checkbox\" value=\"9\" onchange=\"render()\"><span class=\"st-check\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"3\"><polyline points=\"20 6 9 17 4 12\"/></svg></span><span class=\"st-dot s-indigo\"></span>待递交</label>\n          <label class=\"st-cb\"><input type=\"checkbox\" value=\"2\" onchange=\"render()\"><span class=\"st-check\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"3\"><polyline points=\"20 6 9 17 4 12\"/></svg></span><span class=\"st-dot s-error\"></span>待确认</label>\n          <label class=\"st-cb\"><input type=\"checkbox\" value=\"7\" onchange=\"render()\"><span class=\"st-check\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"3\"><polyline points=\"20 6 9 17 4 12\"/></svg></span><span class=\"st-dot s-rejected\"></span>待补充</label>\n          <label class=\"st-cb\"><input type=\"checkbox\" value=\"8\" onchange=\"render()\"><span class=\"st-check\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"3\"><polyline points=\"20 6 9 17 4 12\"/></svg></span><span class=\"st-dot s-muted\"></span>已作废</label>\n        </div>\n      </div>\n      <div class=\"filter-item\">\n        <span class=\"filter-label\">关键字</span>\n        <input class=\"filter-input\" placeholder=\"请输入关键字\">\n      </div>\n      <div class=\"actions\" style=\"margin-left:auto\">\n        <button class=\"btn primary\" onclick=\"toast('查询')\">\n          <svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><circle cx=\"11\" cy=\"11\" r=\"7\"/><path d=\"m21 21-4.3-4.3\"/></svg>\n          查询\n        </button>\n        <button class=\"btn\" onclick=\"resetFilter()\">重置</button>\n      </div>\n    </div>\n\n    <div class=\"list-head\" style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:14px\">\n      <div class=\"table-title\">提单消息<span class=\"num\" id=\"listCount\">1</span></div>\n    </div>\n    <div id=\"taskTableWrap\"></div>\n  </main>\n</div>\n\n<!-- 详情弹窗 -->\n<div class=\"modal-mask\" id=\"modalMask\">\n  <div class=\"modal\">\n    <div class=\"modal-head\">\n      <div>\n        <div class=\"modal-title\">提单详情</div>\n        <div class=\"modal-sub\" id=\"modalSub\"></div>\n      </div>\n      <button class=\"close\" onclick=\"closeModal()\">×</button>\n    </div>\n\n    <div class=\"modal-body\">\n      <section class=\"section\">\n        <div class=\"section-head\">\n          <div class=\"section-name\">附件<span class=\"section-count\" id=\"fileCount\">0 个</span></div>\n          <span class=\"muted\">点击可下载</span>\n        </div>\n        <div class=\"file-list\" id=\"fileList\"></div>\n      </section>\n    </div>\n\n    <div class=\"modal-foot\">\n      <div class=\"foot-actions\">\n        <button class=\"btn\" onclick=\"closeModal()\">关闭</button>\n      </div>\n    </div>\n  </div>\n</div>\n\n<!-- 修改密码弹窗 -->\n<div class=\"modal-mask\" id=\"passwordMask\" style=\"display:none\">\n  <div class=\"modal\" style=\"width:min(420px,94vw)\">\n    <div class=\"modal-head\">\n      <div>\n        <div class=\"modal-title\">修改密码</div>\n        <div class=\"modal-sub\">修改后需要重新登录</div>\n      </div>\n      <button class=\"close\" onclick=\"closePasswordModal()\">×</button>\n    </div>\n    <div class=\"modal-body\">\n      <div class=\"form-group\">\n        <label>当前密码</label>\n        <input type=\"password\" id=\"oldPassword\" placeholder=\"请输入当前密码\">\n      </div>\n      <div class=\"form-group\">\n        <label>新密码</label>\n        <input type=\"password\" id=\"newPassword\" placeholder=\"至少6位\">\n      </div>\n      <div class=\"form-group\">\n        <label>确认新密码</label>\n        <input type=\"password\" id=\"confirmPassword\" placeholder=\"再次输入新密码\">\n      </div>\n      <div class=\"error-msg\" id=\"passwordError\"></div>\n    </div>\n    <div class=\"modal-foot\">\n      <div class=\"foot-actions\">\n        <button class=\"btn\" onclick=\"closePasswordModal()\">取消</button>\n        <button class=\"btn primary\" onclick=\"submitPassword()\">确认修改</button>\n      </div>\n    </div>\n  </div>\n</div>\n\n<!-- 修改状态弹窗 -->\n<div class=\"modal-mask\" id=\"statusMask\">\n  <div class=\"modal\" style=\"width:min(550px,94vw)\">\n    <div class=\"modal-head\">\n      <div>\n        <div class=\"modal-title\">修改状态</div>\n        <div class=\"modal-sub\" id=\"statusSub\"></div>\n      </div>\n      <button class=\"close\" onclick=\"closeStatusModal()\">×</button>\n    </div>\n    <div class=\"modal-body\">\n      <div style=\"margin-bottom:10px;font-size:var(--fs-sm);color:var(--gray-600)\">请选择新状态</div>\n      <div class=\"status-section-label\">流程状态</div>\n      <div class=\"status-grid\">\n        <label class=\"status-card\" data-val=\"1\">\n          <input type=\"radio\" name=\"st\" value=\"1\">\n          <span class=\"sc-dot s-processing\"></span>\n          <div class=\"sc-text\"><div class=\"sc-name\">进行中</div><div class=\"sc-desc\">客服提交</div></div>\n        </label>\n        <label class=\"status-card\" data-val=\"3\">\n          <input type=\"radio\" name=\"st\" value=\"3\">\n          <span class=\"sc-dot s-done\"></span>\n          <div class=\"sc-text\"><div class=\"sc-name\">已做单</div><div class=\"sc-desc\">内勤做单</div></div>\n        </label>\n        <label class=\"status-card\" data-val=\"4\">\n          <input type=\"radio\" name=\"st\" value=\"4\">\n          <span class=\"sc-dot s-teal\"></span>\n          <div class=\"sc-text\"><div class=\"sc-name\">已递交</div><div class=\"sc-desc\">内勤提交保司(完结)</div></div>\n        </label>\n        <label class=\"status-card\" data-val=\"5\">\n          <input type=\"radio\" name=\"st\" value=\"5\">\n          <span class=\"sc-dot s-orange\"></span>\n          <div class=\"sc-text\"><div class=\"sc-name\">对公认款中</div><div class=\"sc-desc\">内勤提交保司(对公等认款)</div></div>\n        </label>\n        <label class=\"status-card\" data-val=\"6\">\n          <input type=\"radio\" name=\"st\" value=\"6\">\n          <span class=\"sc-dot s-purple\"></span>\n          <div class=\"sc-text\"><div class=\"sc-name\">二维码</div><div class=\"sc-desc\">内勤提交保司(等二维码)</div></div>\n        </label>\n        <label class=\"status-card\" data-val=\"9\">\n          <input type=\"radio\" name=\"st\" value=\"9\">\n          <span class=\"sc-dot s-indigo\"></span>\n          <div class=\"sc-text\"><div class=\"sc-name\">待递交</div><div class=\"sc-desc\">保司截单后递交的单子</div></div>\n        </label>\n      </div>\n      <div class=\"status-section-label\">退回状态<span class=\"must-fill\">需填写退回原因</span></div>\n      <div class=\"status-grid\">\n        <label class=\"status-card\" data-val=\"2\">\n          <input type=\"radio\" name=\"st\" value=\"2\">\n          <span class=\"sc-dot s-error\"></span>\n          <div class=\"sc-text\"><div class=\"sc-name\">待确认</div><div class=\"sc-desc\">客服提交做单资料不全，内勤退回</div></div>\n        </label>\n        <label class=\"status-card\" data-val=\"7\">\n          <input type=\"radio\" name=\"st\" value=\"7\">\n          <span class=\"sc-dot s-rejected\"></span>\n          <div class=\"sc-text\"><div class=\"sc-name\">待补充</div><div class=\"sc-desc\">递交保司的资料少或未付款</div></div>\n        </label>\n      </div>\n      <div class=\"status-section-label\">终止</div>\n      <div class=\"status-grid\">\n        <label class=\"status-card\" data-val=\"8\">\n          <input type=\"radio\" name=\"st\" value=\"8\">\n          <span class=\"sc-dot s-muted\"></span>\n          <div class=\"sc-text\"><div class=\"sc-name\">已作废</div><div class=\"sc-desc\">作废单</div></div>\n        </label>\n      </div>\n      <div id=\"rejectWrap\" class=\"reject-wrap\" style=\"display:none\">\n        <div style=\"margin:14px 0 8px;font-size:var(--fs-sm);color:var(--gray-600)\">退回原因<span style=\"color:#f5222d\">（必填）</span></div>\n        <textarea id=\"rejectInput\" class=\"cr-edit\" style=\"min-height:90px\" placeholder=\"请输入退回原因，将通知提交人修改后重新提交\"></textarea>\n      </div>\n    </div>\n    <div class=\"modal-foot\">\n      <div class=\"foot-actions\">\n        <button class=\"btn\" onclick=\"closeStatusModal()\">取消</button>\n        <button class=\"btn primary\" onclick=\"confirmStatus()\">确认修改</button>\n      </div>\n    </div>\n  </div>\n</div>\n\n<!-- OCR识别弹窗 -->\n<div class=\"modal-mask\" id=\"ocrMask\">\n  <div class=\"modal\" style=\"width:min(960px,94vw);height:min(720px,92vh)\">\n    <div class=\"modal-head\">\n      <div>\n        <div class=\"modal-title\">OCR 身份证识别</div>\n        <div class=\"modal-sub\" id=\"ocrSub\"></div>\n      </div>\n      <button class=\"close\" onclick=\"closeOcrModal()\">×</button>\n    </div>\n    <div class=\"ocr-body\">\n      <div class=\"ocr-left\">\n        <div class=\"ocr-left-title\">\n          <svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" width=\"14\" height=\"14\"><rect x=\"3\" y=\"3\" width=\"18\" height=\"18\" rx=\"2\"/><circle cx=\"8.5\" cy=\"8.5\" r=\"1.5\"/><polyline points=\"21 15 16 10 5 21\"/></svg>\n          身份证原图<span class=\"section-count\" id=\"ocrImgCount\"></span>\n        </div>\n        <div class=\"ocr-thumb-grid\" id=\"ocrThumbList\"></div>\n      </div>\n      <div class=\"ocr-right\">\n        <div class=\"ocr-right-head\">\n          <div class=\"ocr-left-title\">\n            <svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" width=\"14\" height=\"14\"><path d=\"M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z\"/><polyline points=\"14 2 14 8 20 8\"/></svg>\n            识别结果<span class=\"cr-tip\" id=\"ocrEditTip\">可编辑</span>\n          </div>\n          <button class=\"cr-copy\" id=\"ocrVerifyBtn\" onclick=\"ocrVerify()\" style=\"display:none\">\n            <svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M20 6 9 17l-5-5\"/></svg>\n            身份证校验\n          </button>\n        </div>\n        <div id=\"ocrResultArea\" style=\"flex:1;display:flex;flex-direction:column;gap:12px\"></div>\n        <div id=\"ocrVerifyTip\" style=\"display:none\"></div>\n      </div>\n    </div>\n    <div class=\"modal-foot\">\n      <div class=\"foot-actions\">\n        <button class=\"btn\" onclick=\"closeOcrModal()\">关闭</button>\n        <button class=\"btn primary\" id=\"ocrActionBtn\" onclick=\"ocrStart()\">开始识别</button>\n      </div>\n    </div>\n  </div>\n</div>\n\n<!-- 图片放大预览层 -->\n<div class=\"img-viewer\" id=\"imgViewer\">\n  <button class=\"img-viewer-rotate\" title=\"旋转 90°\" onclick=\"viewerRotate()\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M21 12a9 9 0 1 1-2.64-6.36\"/><polyline points=\"21 3 21 9 15 9\"/></svg></button>\n  <a class=\"img-viewer-dl\" id=\"imgViewerDl\" download>下载</a>\n  <button class=\"img-viewer-close\" onclick=\"closeImgViewer()\">×</button>\n  <img id=\"imgViewerSrc\" src=\"\" alt=\"预览\">\n  <span class=\"img-viewer-tag\" id=\"imgViewerTag\"></span>\n</div>\n\n<div class=\"toast\" id=\"toast\"></div>\n\n<script src=\"js/app.js\"></script>\n<script>\n  // 填充登录用户信息\n  var u = JSON.parse(localStorage.getItem('currentUser') || '{}');\n  if (u.display_name) {\n    document.getElementById('headerAvatar').textContent = u.display_name.charAt(0);\n    document.getElementById('headerName').textContent = u.display_name;\n  }\n  var roleMap = {0: '管理员', 1: '客服', 2: '保险内勤'};\n  if (u.role != null) {\n    document.getElementById('headerRole').textContent = roleMap[u.role] || '用户';\n  }\n  function logout() {\n    localStorage.removeItem('currentUser');\n    localStorage.removeItem('token');\n    location.href = 'login.html';\n  }\n</script>\n</body>\n</html>\n",
+      "desc": "GET / 重定向到前端",
+      "note": ""
+    },
+    {
+      "name": "登录失败 - 空密码",
+      "method": "POST",
+      "path": "/api/users/login",
+      "status": 401,
+      "expected": [
+        401
+      ],
+      "ok": true,
+      "duration_ms": 3.0,
+      "payload": {
+        "detail": "手机号或密码错误"
+      },
+      "desc": "空白字符串应 401",
+      "note": ""
+    },
+    {
+      "name": "登录失败 - 错误密码",
+      "method": "POST",
+      "path": "/api/users/login",
+      "status": 401,
+      "expected": [
+        401
+      ],
+      "ok": true,
+      "duration_ms": 5.0,
+      "payload": {
+        "detail": "手机号或密码错误"
+      },
+      "desc": "错误密码应 401",
+      "note": ""
+    },
+    {
+      "name": "登录失败 - 不存在手机号",
+      "method": "POST",
+      "path": "/api/users/login",
+      "status": 401,
+      "expected": [
+        401
+      ],
+      "ok": true,
+      "duration_ms": 6.0,
+      "payload": {
+        "detail": "手机号或密码错误"
+      },
+      "desc": "手机号不存在应 401",
+      "note": ""
+    },
+    {
+      "name": "获取用户列表(需登录)",
+      "method": "GET",
+      "path": "/api/users",
+      "status": 200,
+      "expected": [
+        200
+      ],
+      "ok": true,
+      "duration_ms": 6.0,
+      "payload": [
+        {
+          "id": 1,
+          "username": "admin",
+          "display_name": "管理员",
+          "role": 0
+        },
+        {
+          "id": 2,
+          "username": "wz",
+          "display_name": "小步",
+          "role": 0
+        },
+        {
+          "id": 4,
+          "username": "wys",
+          "display_name": "王云松",
+          "role": 1
+        },
+        {
+          "id": 5,
+          "username": "lq",
+          "display_name": "李琪",
+          "role": 1
+        },
+        {
+          "id": 6,
+          "username": "pmm",
+          "display_name": "庞咪咪",
+          "role": 1
+        },
+        {
+          "id": 7,
+          "username": "hl",
+          "display_name": "侯岚",
+          "role": 1
+        },
+        {
+          "id": 8,
+          "username": "knn",
+          "display_name": "孔尼娜",
+          "role": 1
+        },
+        {
+          "id": 9,
+          "username": "cxh",
+          "display_name": "陈晓红",
+          "role": 1
+        },
+        {
+          "id": 10,
+          "username": "fy",
+          "display_name": "付岩",
+          "role": 1
+        },
+        {
+          "id": 11,
+          "username": "zb",
+          "display_name": "张冰",
+          "role": 1
+        },
+        {
+          "id": 12,
+          "username": "lyc",
+          "display_name": "刘远存",
+          "role": 1
+        },
+        {
+          "id": 13,
+          "username": "hwj",
+          "display_name": "韩文佳",
+          "role": 1
+        },
+        {
+          "id": 14,
+          "username": "wj",
+          "display_name": "温珺",
+          "role": 2
+        },
+        {
+          "id": 15,
+          "username": "wb",
+          "display_name": "武彬",
+          "role": 2
+        },
+        {
+          "id": 16,
+          "username": "lxh",
+          "display_name": "梁晓红",
+          "role": 2
+        },
+        {
+          "id": 17,
+          "username": "lhn",
+          "display_name": "郎汉宁",
+          "role": 2
+        },
+        {
+          "id": 18,
+          "username": "lpx",
+          "display_name": "李盼想",
+          "role": 2
+        },
+        {
+          "id": 19,
+          "username": "sxs",
+          "display_name": "孙兴素",
+          "role": 2
+        },
+        {
+          "id": 20,
+          "username": "ncl",
+          "display_name": "牛翠丽",
+          "role": 2
+        },
+        {
+          "id": 21,
+          "username": "hxl",
+          "display_name": "韩晓林",
+          "role": 2
+        },
+        {
+          "id": 22,
+          "username": "csq",
+          "display_name": "崔素庆",
+          "role": 2
+        }
+      ],
+      "desc": "鉴权后下拉框数据",
+      "note": ""
+    },
+    {
+      "name": "错误 token 被拦截",
+      "method": "GET",
+      "path": "/api/users",
+      "status": 401,
+      "expected": [
+        401,
+        403
+      ],
+      "ok": true,
+      "duration_ms": 14.0,
+      "payload": {
+        "detail": "登录已过期或无效"
+      },
+      "desc": "缺少有效 token 应 401/403",
+      "note": ""
+    },
+    {
+      "name": "创建新投",
+      "method": "POST",
+      "path": "/api/new-policies",
+      "status": 200,
+      "expected": [
+        200
+      ],
+      "ok": true,
+      "duration_ms": 20.6,
+      "payload": {
+        "id": 13,
+        "company_name": "测试公司_1789444039",
+        "source": "电话",
+        "job_type": "建筑工人",
+        "plan": "方案A",
+        "is_renewal": "新投",
+        "specified_effective": false,
+        "discovery_date": null,
+        "insurance_type": "意外险",
+        "annual_salary": 80000.0,
+        "remarks": "测试",
+        "qualification": "一级资质",
+        "file_paths": "[\"http://example.com/test.pdf\"]",
+        "status": "待完成",
+        "creator": "测试员",
+        "handler": "内勤A",
+        "created_at": "2026-09-15T11:47:19",
+        "updated_at": "2026-09-15T11:47:19",
+        "completed_at": null
+      },
+      "desc": "客服端提交一条新投",
+      "note": ""
+    },
+    {
+      "name": "列出新投",
+      "method": "GET",
+      "path": "/api/new-policies?skip=0&limit=10",
+      "status": 200,
+      "expected": [
+        200
+      ],
+      "ok": true,
+      "duration_ms": 5.0,
+      "payload": [
+        {
+          "id": 13,
+          "company_name": "测试公司_1789444039",
+          "source": "电话",
+          "job_type": "建筑工人",
+          "plan": "方案A",
+          "is_renewal": "新投",
+          "specified_effective": false,
+          "discovery_date": null,
+          "insurance_type": "意外险",
+          "annual_salary": 80000.0,
+          "remarks": "测试",
+          "qualification": "一级资质",
+          "file_paths": "[\"http://example.com/test.pdf\"]",
+          "status": "待完成",
+          "creator": "测试员",
+          "handler": "内勤A",
+          "created_at": "2026-09-15T11:47:19",
+          "updated_at": "2026-09-15T11:47:19",
+          "completed_at": null
+        },
+        {
+          "id": 12,
+          "company_name": "测试公司_1789444017",
+          "source": "电话",
+          "job_type": "建筑工人",
+          "plan": "方案A",
+          "is_renewal": "新投",
+          "specified_effective": false,
+          "discovery_date": null,
+          "insurance_type": "重疾险",
+          "annual_salary": 80000.0,
+          "remarks": "更新备注",
+          "qualification": "一级资质",
+          "file_paths": "[\"http://example.com/test.pdf\"]",
+          "status": "待完成",
+          "creator": "测试员",
+          "handler": "内勤A",
+          "created_at": "2026-09-15T11:46:57",
+          "updated_at": "2026-09-15T11:46:57",
+          "completed_at": null
+        },
+        {
+          "id": 11,
+          "company_name": "测试公司_1789443935",
+          "source": "电话",
+          "job_type": "建筑工人",
+          "plan": "方案A",
+          "is_renewal": "新投",
+          "specified_effective": false,
+          "discovery_date": null,
+          "insurance_type": "重疾险",
+          "annual_salary": 80000.0,
+          "remarks": "更新备注",
+          "qualification": "一级资质",
+          "file_paths": "[\"http://example.com/test.pdf\"]",
+          "status": "待完成",
+          "creator": "测试员",
+          "handler": "内勤A",
+          "created_at": "2026-09-15T11:45:35",
+          "updated_at": "2026-09-15T11:45:35",
+          "completed_at": null
+        },
+        {
+          "id": 10,
+          "company_name": "测试公司_1789443920",
+          "source": "电话",
+          "job_type": "建筑工人",
+          "plan": "方案A",
+          "is_renewal": "新投",
+          "specified_effective": false,
+          "discovery_date": null,
+          "insurance_type": "重疾险",
+          "annual_salary": 80000.0,
+          "remarks": "更新备注",
+          "qualification": "一级资质",
+          "file_paths": "[\"http://example.com/test.pdf\"]",
+          "status": "待完成",
+          "creator": "测试员",
+          "handler": "内勤A",
+          "created_at": "2026-09-15T11:45:20",
+          "updated_at": "2026-09-15T11:45:20",
+          "completed_at": null
+        },
+        {
+          "id": 9,
+          "company_name": "测试公司_1789443898",
+          "source": "电话",
+          "job_type": "建筑工人",
+          "plan": "方案A",
+          "is_renewal": "新投",
+          "specified_effective": false,
+          "discovery_date": null,
+          "insurance_type": "重疾险",
+          "annual_salary": 80000.0,
+          "remarks": "更新备注",
+          "qualification": "一级资质",
+          "file_paths": "[\"http://example.com/test.pdf\"]",
+          "status": "待完成",
+          "creator": "测试员",
+          "handler": "内勤A",
+          "created_at": "2026-09-15T11:44:58",
+          "updated_at": "2026-09-15T11:44:58",
+          "completed_at": null
+        },
+        {
+          "id": 8,
+          "company_name": "测试公司_1789443874",
+          "source": "电话",
+          "job_type": "建筑工人",
+          "plan": "方案A",
+          "is_renewal": "新投",
+          "specified_effective": false,
+          "discovery_date": null,
+          "insurance_type": "重疾险",
+          "annual_salary": 80000.0,
+          "remarks": "更新备注",
+          "qualification": "一级资质",
+          "file_paths": "[\"http://example.com/test.pdf\"]",
+          "status": "待完成",
+          "creator": "测试员",
+          "handler": "内勤A",
+          "created_at": "2026-09-15T11:44:34",
+          "updated_at": "2026-09-15T11:44:34",
+          "completed_at": null
+        },
+        {
+          "id": 7,
+          "company_name": "测试公司_1789443837",
+          "source": "电话",
+          "job_type": "建筑工人",
+          "plan": "方案A",
+          "is_renewal": "新投",
+          "specified_effective": false,
+          "discovery_date": null,
+          "insurance_type": "重疾险",
+          "annual_salary": 80000.0,
+          "remarks": "更新备注",
+          "qualification": "一级资质",
+          "file_paths": "[\"http://example.com/test.pdf\"]",
+          "status": "待完成",
+          "creator": "测试员",
+          "handler": "内勤A",
+          "created_at": "2026-09-15T11:43:57",
+          "updated_at": "2026-09-15T11:43:57",
+          "completed_at": null
+        },
+        {
+          "id": 6,
+          "company_name": "测试公司_1789443801",
+          "source": "电话",
+          "job_type": "建筑工人",
+          "plan": "方案A",
+          "is_renewal": "新投",
+          "specified_effective": false,
+          "discovery_date": null,
+          "insurance_type": "重疾险",
+          "annual_salary": 80000.0,
+          "remarks": "更新备注",
+          "qualification": "一级资质",
+          "file_paths": "[\"http://example.com/test.pdf\"]",
+          "status": "待完成",
+          "creator": "测试员",
+          "handler": "内勤A",
+          "created_at": "2026-09-15T11:43:21",
+          "updated_at": "2026-09-15T11:43:21",
+          "completed_at": null
+        },
+        {
+          "id": 5,
+          "company_name": "元宝机电科技有限公司",
+          "source": null,
+          "job_type": null,
+          "plan": null,
+          "is_renewal": null,
+          "specified_effective": false,
+          "discovery_date": null,
+          "insurance_type": "设备险",
+          "annual_salary": null,
+          "remarks": null,
+          "qualification": null,
+          "file_paths": null,
+          "status": "待完成",
+          "creator": null,
+          "handler": null,
+          "created_at": "2026-08-28T10:25:05",
+          "updated_at": "2026-08-28T10:25:05",
+          "completed_at": null
+        },
+        {
+          "id": 4,
+          "company_name": "北京易梯",
+          "source": null,
+          "job_type": null,
+          "plan": null,
+          "is_renewal": null,
+          "specified_effective": false,
+          "discovery_date": null,
+          "insurance_type": null,
+          "annual_salary": null,
+          "remarks": null,
+          "qualification": null,
+          "file_paths": "[\"C:/Users/yiti/AppData/Roaming/Tencent/QQ/Temp/)(P71W5%J}448V14OQI6FUA_tmb.png\"]",
+          "status": "待完成",
+          "creator": null,
+          "handler": null,
+          "created_at": "2026-08-27T16:33:01",
+          "updated_at": "2026-08-27T16:33:01",
+          "completed_at": null
+        }
+      ],
+      "desc": "分页列出新投",
+      "note": ""
+    },
+    {
+      "name": "获取单条新投",
+      "method": "GET",
+      "path": "/api/new-policies/13",
+      "status": 200,
+      "expected": [
+        200
+      ],
+      "ok": true,
+      "duration_ms": 24.0,
+      "payload": {
+        "id": 13,
+        "company_name": "测试公司_1789444039",
+        "source": "电话",
+        "job_type": "建筑工人",
+        "plan": "方案A",
+        "is_renewal": "新投",
+        "specified_effective": false,
+        "discovery_date": null,
+        "insurance_type": "意外险",
+        "annual_salary": 80000.0,
+        "remarks": "测试",
+        "qualification": "一级资质",
+        "file_paths": "[\"http://example.com/test.pdf\"]",
+        "status": "待完成",
+        "creator": "测试员",
+        "handler": "内勤A",
+        "created_at": "2026-09-15T11:47:19",
+        "updated_at": "2026-09-15T11:47:19",
+        "completed_at": null
+      },
+      "desc": "按 id 查询",
+      "note": ""
+    },
+    {
+      "name": "更新新投",
+      "method": "PUT",
+      "path": "/api/new-policies/13",
+      "status": 200,
+      "expected": [
+        200
+      ],
+      "ok": true,
+      "duration_ms": 25.0,
+      "payload": {
+        "id": 13,
+        "company_name": "测试公司_1789444039",
+        "source": "电话",
+        "job_type": "建筑工人",
+        "plan": "方案A",
+        "is_renewal": "新投",
+        "specified_effective": false,
+        "discovery_date": null,
+        "insurance_type": "重疾险",
+        "annual_salary": 80000.0,
+        "remarks": "更新备注",
+        "qualification": "一级资质",
+        "file_paths": "[\"http://example.com/test.pdf\"]",
+        "status": "待完成",
+        "creator": "测试员",
+        "handler": "内勤A",
+        "created_at": "2026-09-15T11:47:19",
+        "updated_at": "2026-09-15T11:47:19",
+        "completed_at": null
+      },
+      "desc": "编辑字段",
+      "note": ""
+    },
+    {
+      "name": "获取不存在的新投",
+      "method": "GET",
+      "path": "/api/new-policies/99999999",
+      "status": 404,
+      "expected": [
+        404
+      ],
+      "ok": true,
+      "duration_ms": 7.0,
+      "payload": {
+        "detail": "新投不存在"
+      },
+      "desc": "不存在应返回 404",
+      "note": ""
+    },
+    {
+      "name": "创建批改",
+      "method": "POST",
+      "path": "/api/endorsements",
+      "status": 200,
+      "expected": [
+        200
+      ],
+      "ok": true,
+      "duration_ms": 9.0,
+      "payload": {
+        "id": 8,
+        "new_policy_id": 13,
+        "company_name": "测试公司批改",
+        "job_type": "焊工",
+        "specified_effective": true,
+        "insurance_type": "医疗险",
+        "annual_salary": 120000.0,
+        "remarks": "批改测试",
+        "file_paths": null,
+        "status": "待完成",
+        "creator": "测试员",
+        "handler": "内勤B",
+        "created_at": "2026-09-15T11:47:19",
+        "updated_at": "2026-09-15T11:47:19",
+        "completed_at": null
+      },
+      "desc": "客服端提交批改",
+      "note": ""
+    },
+    {
+      "name": "列出批改",
+      "method": "GET",
+      "path": "/api/endorsements?skip=0&limit=10",
+      "status": 200,
+      "expected": [
+        200
+      ],
+      "ok": true,
+      "duration_ms": 23.0,
+      "payload": [
+        {
+          "id": 8,
+          "new_policy_id": 13,
+          "company_name": "测试公司批改",
+          "job_type": "焊工",
+          "specified_effective": true,
+          "insurance_type": "医疗险",
+          "annual_salary": 120000.0,
+          "remarks": "批改测试",
+          "file_paths": null,
+          "status": "待完成",
+          "creator": "测试员",
+          "handler": "内勤B",
+          "created_at": "2026-09-15T11:47:19",
+          "updated_at": "2026-09-15T11:47:19",
+          "completed_at": null
+        },
+        {
+          "id": 7,
+          "new_policy_id": 12,
+          "company_name": "测试公司批改",
+          "job_type": "焊工",
+          "specified_effective": true,
+          "insurance_type": "医疗险",
+          "annual_salary": 120000.0,
+          "remarks": "更新备注批改",
+          "file_paths": null,
+          "status": "待完成",
+          "creator": "测试员",
+          "handler": "内勤B",
+          "created_at": "2026-09-15T11:46:57",
+          "updated_at": "2026-09-15T11:46:58",
+          "completed_at": null
+        },
+        {
+          "id": 6,
+          "new_policy_id": 11,
+          "company_name": "测试公司批改",
+          "job_type": "焊工",
+          "specified_effective": true,
+          "insurance_type": "医疗险",
+          "annual_salary": 120000.0,
+          "remarks": "更新备注批改",
+          "file_paths": null,
+          "status": "待完成",
+          "creator": "测试员",
+          "handler": "内勤B",
+          "created_at": "2026-09-15T11:45:35",
+          "updated_at": "2026-09-15T11:45:35",
+          "completed_at": null
+        },
+        {
+          "id": 5,
+          "new_policy_id": 10,
+          "company_name": "测试公司批改",
+          "job_type": "焊工",
+          "specified_effective": true,
+          "insurance_type": "医疗险",
+          "annual_salary": 120000.0,
+          "remarks": "更新备注批改",
+          "file_paths": null,
+          "status": "待完成",
+          "creator": "测试员",
+          "handler": "内勤B",
+          "created_at": "2026-09-15T11:45:20",
+          "updated_at": "2026-09-15T11:45:20",
+          "completed_at": null
+        },
+        {
+          "id": 4,
+          "new_policy_id": 9,
+          "company_name": "测试公司批改",
+          "job_type": "焊工",
+          "specified_effective": true,
+          "insurance_type": "医疗险",
+          "annual_salary": 120000.0,
+          "remarks": "更新备注批改",
+          "file_paths": null,
+          "status": "待完成",
+          "creator": "测试员",
+          "handler": "内勤B",
+          "created_at": "2026-09-15T11:44:58",
+          "updated_at": "2026-09-15T11:44:58",
+          "completed_at": null
+        },
+        {
+          "id": 3,
+          "new_policy_id": 8,
+          "company_name": "测试公司批改",
+          "job_type": "焊工",
+          "specified_effective": true,
+          "insurance_type": "医疗险",
+          "annual_salary": 120000.0,
+          "remarks": "更新备注批改",
+          "file_paths": null,
+          "status": "待完成",
+          "creator": "测试员",
+          "handler": "内勤B",
+          "created_at": "2026-09-15T11:44:34",
+          "updated_at": "2026-09-15T11:44:34",
+          "completed_at": null
+        },
+        {
+          "id": 2,
+          "new_policy_id": 7,
+          "company_name": "测试公司批改",
+          "job_type": "焊工",
+          "specified_effective": true,
+          "insurance_type": "医疗险",
+          "annual_salary": 120000.0,
+          "remarks": "更新备注批改",
+          "file_paths": null,
+          "status": "待完成",
+          "creator": "测试员",
+          "handler": "内勤B",
+          "created_at": "2026-09-15T11:43:57",
+          "updated_at": "2026-09-15T11:43:57",
+          "completed_at": null
+        },
+        {
+          "id": 1,
+          "new_policy_id": 6,
+          "company_name": "测试公司批改",
+          "job_type": "焊工",
+          "specified_effective": true,
+          "insurance_type": "医疗险",
+          "annual_salary": 120000.0,
+          "remarks": "更新备注批改",
+          "file_paths": null,
+          "status": "待完成",
+          "creator": "测试员",
+          "handler": "内勤B",
+          "created_at": "2026-09-15T11:43:21",
+          "updated_at": "2026-09-15T11:43:21",
+          "completed_at": null
+        }
+      ],
+      "desc": "",
+      "note": ""
+    },
+    {
+      "name": "获取单条批改",
+      "method": "GET",
+      "path": "/api/endorsements/8",
+      "status": 200,
+      "expected": [
+        200
+      ],
+      "ok": true,
+      "duration_ms": 5.0,
+      "payload": {
+        "id": 8,
+        "new_policy_id": 13,
+        "company_name": "测试公司批改",
+        "job_type": "焊工",
+        "specified_effective": true,
+        "insurance_type": "医疗险",
+        "annual_salary": 120000.0,
+        "remarks": "批改测试",
+        "file_paths": null,
+        "status": "待完成",
+        "creator": "测试员",
+        "handler": "内勤B",
+        "created_at": "2026-09-15T11:47:19",
+        "updated_at": "2026-09-15T11:47:19",
+        "completed_at": null
+      },
+      "desc": "",
+      "note": ""
+    },
+    {
+      "name": "更新批改",
+      "method": "PUT",
+      "path": "/api/endorsements/8",
+      "status": 200,
+      "expected": [
+        200
+      ],
+      "ok": true,
+      "duration_ms": 29.0,
+      "payload": {
+        "id": 8,
+        "new_policy_id": 13,
+        "company_name": "测试公司批改",
+        "job_type": "焊工",
+        "specified_effective": true,
+        "insurance_type": "医疗险",
+        "annual_salary": 120000.0,
+        "remarks": "更新备注批改",
+        "file_paths": null,
+        "status": "待完成",
+        "creator": "测试员",
+        "handler": "内勤B",
+        "created_at": "2026-09-15T11:47:19",
+        "updated_at": "2026-09-15T11:47:19",
+        "completed_at": null
+      },
+      "desc": "",
+      "note": ""
+    },
+    {
+      "name": "创建聊天消息(首条→自动建任务)",
+      "method": "POST",
+      "path": "/api/chat/messages",
+      "status": 200,
+      "expected": [
+        200
+      ],
+      "ok": true,
+      "duration_ms": 34.5,
+      "payload": {
+        "id": 38,
+        "task_id": "TEST-1789444039",
+        "content": "你好,我是客户",
+        "file_paths": null,
+        "creator": "小步",
+        "creator_name": null,
+        "created_at": "2026-09-15T11:47:19"
+      },
+      "desc": "",
+      "note": ""
+    },
+    {
+      "name": "再发一条同任务消息",
+      "method": "POST",
+      "path": "/api/chat/messages",
+      "status": 200,
+      "expected": [
+        200
+      ],
+      "ok": true,
+      "duration_ms": 7.0,
+      "payload": {
+        "id": 39,
+        "task_id": "TEST-1789444039",
+        "content": "需要意外险",
+        "file_paths": null,
+        "creator": null,
+        "creator_name": null,
+        "created_at": "2026-09-15T11:47:19"
+      },
+      "desc": "同 task_id 多次发消息",
+      "note": ""
+    },
+    {
+      "name": "获取任务的所有聊天记录",
+      "method": "GET",
+      "path": "/api/chat/messages?task_id=TEST-1789444039",
+      "status": 200,
+      "expected": [
+        200
+      ],
+      "ok": true,
+      "duration_ms": 5.0,
+      "payload": [
+        {
+          "id": 38,
+          "task_id": "TEST-1789444039",
+          "content": "你好,我是客户",
+          "file_paths": null,
+          "creator": "小步",
+          "creator_name": "小步",
+          "created_at": "2026-09-15T11:47:19"
+        },
+        {
+          "id": 39,
+          "task_id": "TEST-1789444039",
+          "content": "需要意外险",
+          "file_paths": null,
+          "creator": null,
+          "creator_name": null,
+          "created_at": "2026-09-15T11:47:19"
+        }
+      ],
+      "desc": "按 task_id 拉取",
+      "note": ""
+    },
+    {
+      "name": "获取任务列表",
+      "method": "GET",
+      "path": "/api/chat/tasks?skip=0&limit=20",
+      "status": 200,
+      "expected": [
+        200
+      ],
+      "ok": true,
+      "duration_ms": 6.0,
+      "payload": [
+        {
+          "task_id": "TEST-1789444039",
+          "status": 1,
+          "business_type": 1,
+          "insurance_company": "平安保险",
+          "customer_company": "测试公司A",
+          "creator": "小步",
+          "creator_name": "小步",
+          "user_id": 2,
+          "operator": null,
+          "operator_id": null,
+          "msg_count": 2,
+          "created_at": "2026-09-15T11:47:19",
+          "updated_at": "2026-09-15T11:47:19"
+        },
+        {
+          "task_id": "E2E-1789444022",
+          "status": 7,
+          "business_type": null,
+          "insurance_company": null,
+          "customer_company": null,
+          "creator": "客户A",
+          "creator_name": "小步",
+          "user_id": 2,
+          "operator": null,
+          "operator_id": null,
+          "msg_count": 4,
+          "created_at": "2026-09-15T11:47:02",
+          "updated_at": "2026-09-15T11:47:04"
+        },
+        {
+          "task_id": "TEST-1789444018",
+          "status": 2,
+          "business_type": 1,
+          "insurance_company": "平安保险",
+          "customer_company": "测试公司A",
+          "creator": "小步",
+          "creator_name": "小步",
+          "user_id": 2,
+          "operator": null,
+          "operator_id": null,
+          "msg_count": 2,
+          "created_at": "2026-09-15T11:46:58",
+          "updated_at": "2026-09-15T11:47:01"
+        },
+        {
+          "task_id": "TEST-1789443935",
+          "status": 2,
+          "business_type": 1,
+          "insurance_company": "平安保险",
+          "customer_company": "测试公司A",
+          "creator": "小步",
+          "creator_name": "小步",
+          "user_id": 2,
+          "operator": null,
+          "operator_id": null,
+          "msg_count": 2,
+          "created_at": "2026-09-15T11:45:35",
+          "updated_at": "2026-09-15T11:45:35"
+        },
+        {
+          "task_id": "TEST-1789443920",
+          "status": 2,
+          "business_type": 1,
+          "insurance_company": "平安保险",
+          "customer_company": "测试公司A",
+          "creator": "小步",
+          "creator_name": "小步",
+          "user_id": 2,
+          "operator": null,
+          "operator_id": null,
+          "msg_count": 2,
+          "created_at": "2026-09-15T11:45:20",
+          "updated_at": "2026-09-15T11:45:26"
+        },
+        {
+          "task_id": "TEST-1789443898",
+          "status": 2,
+          "business_type": 1,
+          "insurance_company": "平安保险",
+          "customer_company": "测试公司A",
+          "creator": "小步",
+          "creator_name": "小步",
+          "user_id": 2,
+          "operator": null,
+          "operator_id": null,
+          "msg_count": 2,
+          "created_at": "2026-09-15T11:44:58",
+          "updated_at": "2026-09-15T11:44:59"
+        },
+        {
+          "task_id": "TEST-1789443874",
+          "status": 2,
+          "business_type": 1,
+          "insurance_company": "平安保险",
+          "customer_company": "测试公司A",
+          "creator": "小步",
+          "creator_name": "小步",
+          "user_id": 2,
+          "operator": null,
+          "operator_id": null,
+          "msg_count": 2,
+          "created_at": "2026-09-15T11:44:34",
+          "updated_at": "2026-09-15T11:44:34"
+        },
+        {
+          "task_id": "TEST-1789443837",
+          "status": 2,
+          "business_type": 1,
+          "insurance_company": "平安保险",
+          "customer_company": "测试公司A",
+          "creator": "小步",
+          "creator_name": "小步",
+          "user_id": 2,
+          "operator": null,
+          "operator_id": null,
+          "msg_count": 2,
+          "created_at": "2026-09-15T11:43:57",
+          "updated_at": "2026-09-15T11:43:58"
+        },
+        {
+          "task_id": "TEST-1789443801",
+          "status": 2,
+          "business_type": 1,
+          "insurance_company": "平安保险",
+          "customer_company": "测试公司A",
+          "creator": "小步",
+          "creator_name": "小步",
+          "user_id": 2,
+          "operator": null,
+          "operator_id": null,
+          "msg_count": 2,
+          "created_at": "2026-09-15T11:43:21",
+          "updated_at": "2026-09-15T11:43:21"
+        },
+        {
+          "task_id": "TK-C9F43AB2",
+          "status": 1,
+          "business_type": 2,
+          "insurance_company": "新华保险",
+          "customer_company": "易梯",
+          "creator": null,
+          "creator_name": "小步",
+          "user_id": 2,
+          "operator": null,
+          "operator_id": null,
+          "msg_count": 2,
+          "created_at": "2026-09-08T14:28:09",
+          "updated_at": "2026-09-15T09:32:00"
+        },
+        {
+          "task_id": "TK-5353C3AB",
+          "status": 1,
+          "business_type": 1,
+          "insurance_company": "太平洋保险",
+          "customer_company": "元宝",
+          "creator": null,
+          "creator_name": "小步",
+          "user_id": 2,
+          "operator": null,
+          "operator_id": null,
+          "msg_count": 2,
+          "created_at": "2026-09-08T15:26:26",
+          "updated_at": "2026-09-15T09:32:00"
+        },
+        {
+          "task_id": "TK-ADE3A442",
+          "status": 1,
+          "business_type": 1,
+          "insurance_company": "国寿财险",
+          "customer_company": "123",
+          "creator": null,
+          "creator_name": "小步",
+          "user_id": 2,
+          "operator": null,
+          "operator_id": null,
+          "msg_count": 3,
+          "created_at": "2026-09-07T15:31:11",
+          "updated_at": "2026-09-08T10:22:11"
+        }
+      ],
+      "desc": "左侧任务列表",
+      "note": ""
+    },
+    {
+      "name": "上传文件到七牛云",
+      "method": "POST",
+      "path": "/api/chat/upload",
+      "status": 200,
+      "expected": [
+        200
+      ],
+      "ok": true,
+      "duration_ms": 99.7,
+      "payload": {
+        "file_paths": [
+          "http://price.yitipeijian.com/insurance/TEST-1789444039/5680860f04b34897b7697cba7c9a4cb5.png"
+        ]
+      },
+      "desc": "单文件上传到七牛",
+      "note": "若无七牛云凭证会失败"
+    },
+    {
+      "name": "获取留言(状态=1不允许)",
+      "method": "GET",
+      "path": "/api/chat/tasks/TEST-1789444039/comments",
+      "status": 200,
+      "expected": [
+        200
+      ],
+      "ok": true,
+      "duration_ms": 29.7,
+      "payload": [],
+      "desc": "状态 1 应返回空列表",
+      "note": ""
+    },
+    {
+      "name": "状态 1 时不允许留言",
+      "method": "POST",
+      "path": "/api/chat/tasks/TEST-1789444039/comments",
+      "status": 409,
+      "expected": [
+        400,
+        409
+      ],
+      "ok": true,
+      "duration_ms": 5.0,
+      "payload": {
+        "detail": "当前任务状态不允许留言"
+      },
+      "desc": "非可留言状态应被拒绝",
+      "note": ""
+    },
+    {
+      "name": "修改任务状态到 待确认(2)",
+      "method": "PUT",
+      "path": "/api/chat/tasks/TEST-1789444039/status",
+      "status": 200,
+      "expected": [
+        200
+      ],
+      "ok": true,
+      "duration_ms": 9.0,
+      "payload": {
+        "task_id": "TEST-1789444039",
+        "status": 2
+      },
+      "desc": "必须填写 reject_reason",
+      "note": ""
+    },
+    {
+      "name": "留言(状态=2允许)",
+      "method": "POST",
+      "path": "/api/chat/tasks/TEST-1789444039/comments",
+      "status": 200,
+      "expected": [
+        200
+      ],
+      "ok": true,
+      "duration_ms": 8.0,
+      "payload": {
+        "id": 17,
+        "task_id": "TEST-1789444039",
+        "content": "请补充资料1",
+        "author_name": "内勤A",
+        "author_id": 99,
+        "created_at": "2026-09-15T11:47:19"
+      },
+      "desc": "",
+      "note": ""
+    },
+    {
+      "name": "获取留言(状态=2应返回)",
+      "method": "GET",
+      "path": "/api/chat/tasks/TEST-1789444039/comments",
+      "status": 200,
+      "expected": [
+        200
+      ],
+      "ok": true,
+      "duration_ms": 6.0,
+      "payload": [
+        {
+          "id": 16,
+          "task_id": "TEST-1789444039",
+          "content": "缺少资料,请补充",
+          "author_name": null,
+          "author_id": null,
+          "created_at": "2026-09-15T11:47:19"
+        },
+        {
+          "id": 17,
+          "task_id": "TEST-1789444039",
+          "content": "请补充资料1",
+          "author_name": "内勤A",
+          "author_id": 99,
+          "created_at": "2026-09-15T11:47:19"
+        }
+      ],
+      "desc": "状态 2 应返回列表",
+      "note": ""
+    },
+    {
+      "name": "退回无原因应 400",
+      "method": "PUT",
+      "path": "/api/chat/tasks/TEST-1789444039/status",
+      "status": 400,
+      "expected": [
+        400
+      ],
+      "ok": true,
+      "duration_ms": 4.0,
+      "payload": {
+        "detail": "退回操作必须填写原因"
+      },
+      "desc": "",
+      "note": ""
+    },
+    {
+      "name": "非法状态值应 400",
+      "method": "PUT",
+      "path": "/api/chat/tasks/TEST-1789444039/status",
+      "status": 400,
+      "expected": [
+        400
+      ],
+      "ok": true,
+      "duration_ms": 5.0,
+      "payload": {
+        "detail": "状态值无效"
+      },
+      "desc": "",
+      "note": ""
+    },
+    {
+      "name": "不存在的任务应 404",
+      "method": "PUT",
+      "path": "/api/chat/tasks/NOT-EXIST/status",
+      "status": 404,
+      "expected": [
+        404
+      ],
+      "ok": true,
+      "duration_ms": 5.0,
+      "payload": {
+        "detail": "任务不存在"
+      },
+      "desc": "",
+      "note": ""
+    },
+    {
+      "name": "AI 识别(空文本)",
+      "method": "POST",
+      "path": "/api/ai/recognize",
+      "status": 200,
+      "expected": [
+        200
+      ],
+      "ok": true,
+      "duration_ms": 3.0,
+      "payload": {},
+      "desc": "空文本应返回空 dict",
+      "note": ""
+    },
+    {
+      "name": "AI 识别(模拟客户对话)",
+      "method": "POST",
+      "path": "/api/ai/recognize",
+      "status": 200,
+      "expected": [
+        200
+      ],
+      "ok": true,
+      "duration_ms": 1058.4,
+      "payload": {
+        "company_name": "建筑公司",
+        "job_type": "焊工",
+        "insurance_type": "意外险",
+        "annual_salary": 8,
+        "source": "电话",
+        "is_renewal": "新投"
+      },
+      "desc": "调用千问 AI 抽取",
+      "note": "需千问 API 凭证, 无则返回 {}"
+    },
+    {
+      "name": "AI 提取(按 task_id)",
+      "method": "POST",
+      "path": "/api/ai/extract?task_id=TEST-1789444039",
+      "status": 200,
+      "expected": [
+        200
+      ],
+      "ok": true,
+      "duration_ms": 583.1,
+      "payload": {
+        "insurance_type": "意外险"
+      },
+      "desc": "汇总任务消息并 AI 抽取",
+      "note": ""
+    },
+    {
+      "name": "修改密码-旧密码错误",
+      "method": "PUT",
+      "path": "/api/users/2/password",
+      "status": 401,
+      "expected": [
+        401
+      ],
+      "ok": true,
+      "duration_ms": 61.9,
+      "payload": {
+        "detail": "原密码错误"
+      },
+      "desc": "",
+      "note": ""
+    },
+    {
+      "name": "修改密码-新密码过短",
+      "method": "PUT",
+      "path": "/api/users/2/password",
+      "status": 400,
+      "expected": [
+        400
+      ],
+      "ok": true,
+      "duration_ms": 93.0,
+      "payload": {
+        "detail": "新密码至少6位"
+      },
+      "desc": "",
+      "note": ""
+    },
+    {
+      "name": "E2E 发消息: 你好 我们是XX建筑...",
+      "method": "POST",
+      "path": "/api/chat/messages",
+      "status": 200,
+      "expected": [
+        200
+      ],
+      "ok": true,
+      "duration_ms": 41.0,
+      "payload": {
+        "id": 40,
+        "task_id": "E2E-1789444041",
+        "content": "你好 我们是XX建筑公司",
+        "file_paths": null,
+        "creator": "客户A",
+        "creator_name": null,
+        "created_at": "2026-09-15T11:47:21"
+      },
+      "desc": "",
+      "note": ""
+    },
+    {
+      "name": "E2E 发消息: 我们有 30 个工人...",
+      "method": "POST",
+      "path": "/api/chat/messages",
+      "status": 200,
+      "expected": [
+        200
+      ],
+      "ok": true,
+      "duration_ms": 9.0,
+      "payload": {
+        "id": 41,
+        "task_id": "E2E-1789444041",
+        "content": "我们有 30 个工人 都是焊工",
+        "file_paths": null,
+        "creator": "客户A",
+        "creator_name": null,
+        "created_at": "2026-09-15T11:47:21"
+      },
+      "desc": "",
+      "note": ""
+    },
+    {
+      "name": "E2E 发消息: 想投保意外险 年薪 ...",
+      "method": "POST",
+      "path": "/api/chat/messages",
+      "status": 200,
+      "expected": [
+        200
+      ],
+      "ok": true,
+      "duration_ms": 29.2,
+      "payload": {
+        "id": 42,
+        "task_id": "E2E-1789444041",
+        "content": "想投保意外险 年薪 8 万",
+        "file_paths": null,
+        "creator": "客户A",
+        "creator_name": null,
+        "created_at": "2026-09-15T11:47:21"
+      },
+      "desc": "",
+      "note": ""
+    },
+    {
+      "name": "E2E 发消息: 我们是新投 不是续保...",
+      "method": "POST",
+      "path": "/api/chat/messages",
+      "status": 200,
+      "expected": [
+        200
+      ],
+      "ok": true,
+      "duration_ms": 31.0,
+      "payload": {
+        "id": 43,
+        "task_id": "E2E-1789444041",
+        "content": "我们是新投 不是续保",
+        "file_paths": null,
+        "creator": "客户A",
+        "creator_name": null,
+        "created_at": "2026-09-15T11:47:21"
+      },
+      "desc": "",
+      "note": ""
+    },
+    {
+      "name": "E2E AI 抽取",
+      "method": "POST",
+      "path": "/api/ai/extract?task_id=E2E-1789444041",
+      "status": 200,
+      "expected": [
+        200
+      ],
+      "ok": true,
+      "duration_ms": 961.7,
+      "payload": {
+        "company_name": "XX建筑公司",
+        "job_type": "焊工",
+        "insurance_type": "意外险",
+        "annual_salary": 8,
+        "source": "电话",
+        "is_renewal": "新投"
+      },
+      "desc": "",
+      "note": ""
+    },
+    {
+      "name": "E2E 内勤退回(状态 1→7)",
+      "method": "PUT",
+      "path": "/api/chat/tasks/E2E-1789444041/status",
+      "status": 200,
+      "expected": [
+        200
+      ],
+      "ok": true,
+      "duration_ms": 14.0,
+      "payload": {
+        "task_id": "E2E-1789444041",
+        "status": 7
+      },
+      "desc": "必须填写退回原因",
+      "note": ""
+    },
+    {
+      "name": "E2E 退回状态下留言",
+      "method": "POST",
+      "path": "/api/chat/tasks/E2E-1789444041/comments",
+      "status": 200,
+      "expected": [
+        200
+      ],
+      "ok": true,
+      "duration_ms": 10.0,
+      "payload": {
+        "id": 19,
+        "task_id": "E2E-1789444041",
+        "content": "请补充资格证书",
+        "author_name": "内勤A",
+        "author_id": null,
+        "created_at": "2026-09-15T11:47:22"
+      },
+      "desc": "",
+      "note": ""
+    },
+    {
+      "name": "E2E 客户再次提交(7→2)",
+      "method": "POST",
+      "path": "/api/chat/messages",
+      "status": 200,
+      "expected": [
+        200
+      ],
+      "ok": true,
+      "duration_ms": 9.0,
+      "payload": {
+        "id": 44,
+        "task_id": "E2E-1789444041",
+        "content": "补充：焊工证已上传",
+        "file_paths": null,
+        "creator": "客户A",
+        "creator_name": null,
+        "created_at": "2026-09-15T11:47:22"
+      },
+      "desc": "",
+      "note": ""
+    },
+    {
+      "name": "E2E 完成任务",
+      "method": "PUT",
+      "path": "/api/chat/tasks/E2E-1789444041/status",
+      "status": 200,
+      "expected": [
+        200
+      ],
+      "ok": true,
+      "duration_ms": 8.0,
+      "payload": {
+        "task_id": "E2E-1789444041",
+        "status": 3
+      },
+      "desc": "状态 3 不在 COMMENTABLE, 不要求 reject_reason",
+      "note": ""
+    },
+    {
+      "name": "E2E 验证留言累计",
+      "method": "GET",
+      "path": "/api/chat/tasks/E2E-1789444041/comments",
+      "status": 200,
+      "expected": [
+        200
+      ],
+      "ok": true,
+      "duration_ms": 15.0,
+      "payload": [],
+      "desc": "状态=3, 应返回空",
+      "note": ""
+    },
+    {
+      "name": "E2E 已作废后改状态失败",
+      "method": "PUT",
+      "path": "/api/chat/tasks/E2E-1789444041/status",
+      "status": 200,
+      "expected": [
+        200
+      ],
+      "ok": true,
+      "duration_ms": 16.7,
+      "payload": {
+        "task_id": "E2E-1789444041",
+        "status": 8
+      },
+      "desc": "改为 8 (作废)",
+      "note": ""
+    },
+    {
+      "name": "E2E 作废后无法改回",
+      "method": "PUT",
+      "path": "/api/chat/tasks/E2E-1789444041/status",
+      "status": 400,
+      "expected": [
+        400
+      ],
+      "ok": true,
+      "duration_ms": 29.3,
+      "payload": {
+        "detail": "已作废任务不可变更"
+      },
+      "desc": "已作废(8)后状态变更应 400",
+      "note": ""
+    }
+  ]
+}

@@ -1,11 +1,12 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from cit_api.database import get_db
 from cit_api.dto.endorsement_dto import EndorsementCreateDTO, EndorsementUpdateDTO, EndorsementOutDTO
 from cit_api.service.endorsement_service import EndorsementService
+from cit_api.auth import get_current_user
 
-router = APIRouter(prefix="/api/endorsements", tags=["批改"])
+router = APIRouter(prefix="/api/endorsements", tags=["批改"], dependencies=[Depends(get_current_user)])
 
 
 @router.post("", response_model=EndorsementOutDTO)
@@ -23,10 +24,18 @@ def list_endorsements(skip: int = 0, limit: int = 100, db: Session = Depends(get
 @router.get("/{endorsement_id}", response_model=EndorsementOutDTO)
 def get_endorsement(endorsement_id: int, db: Session = Depends(get_db)):
     """查看单条批改"""
-    return EndorsementService(db).get_by_id(endorsement_id)
+    svc = EndorsementService(db)
+    endorsement = svc.get_by_id(endorsement_id)
+    if endorsement is None:
+        raise HTTPException(404, "批改不存在")
+    return endorsement
 
 
 @router.put("/{endorsement_id}", response_model=EndorsementOutDTO)
 def update_endorsement(endorsement_id: int, payload: EndorsementUpdateDTO, db: Session = Depends(get_db)):
     """编辑更新批改"""
-    return EndorsementService(db).update(endorsement_id, payload)
+    svc = EndorsementService(db)
+    endorsement = svc.update(endorsement_id, payload)
+    if endorsement is None:
+        raise HTTPException(404, "批改不存在")
+    return endorsement

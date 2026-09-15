@@ -1,7 +1,7 @@
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from cit_api.model.model import ChatMessage, InsuranceTask, User
+from cit_api.model.model import ChatMessage, InsuranceTask, TaskComment, User
 from cit_api.dto.message_dto import ChatMessageCreateDTO
 
 
@@ -27,7 +27,7 @@ class ChatMessageDAO:
         return (
             db.query(ChatMessage)
             .filter(ChatMessage.task_id == task_id)
-            .order_by(ChatMessage.created_at.desc())
+            .order_by(ChatMessage.created_at.asc())
             .all()
         )
 
@@ -84,3 +84,27 @@ class ChatMessageDAO:
             db.commit()
             db.refresh(task)
         return task
+
+    @staticmethod
+    def list_comments(db: Session, task_id: str) -> list[TaskComment]:
+        """获取任务留言列表"""
+        return (
+            db.query(TaskComment)
+            .filter(TaskComment.task_id == task_id)
+            .order_by(TaskComment.created_at.asc())
+            .all()
+        )
+
+    @staticmethod
+    def add_comment(db: Session, task_id: str, content: str, author_name: str = None, author_id: int = None) -> TaskComment:
+        """新增留言"""
+        comment = TaskComment(
+            task_id=task_id,
+            content=content,
+            author_name=author_name,
+            author_id=author_id,
+        )
+        db.add(comment)
+        db.commit()
+        db.refresh(comment)
+        return comment

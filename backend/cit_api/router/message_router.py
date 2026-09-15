@@ -4,11 +4,13 @@ from fastapi import APIRouter, Depends, File, Form, UploadFile, HTTPException
 from sqlalchemy.orm import Session
 
 from cit_api.database import get_db
-from cit_api.dto.message_dto import ChatMessageCreateDTO, ChatMessageOutDTO, ChatTaskOutDTO
+from cit_api.dto.message_dto import ChatMessageCreateDTO, ChatMessageOutDTO, ChatTaskOutDTO, TaskCommentDTO, StatusUpdateDTO
 from cit_api.service.message_service import ChatMessageService
 from cit_api.util.qiniu import upload_file
+from cit_api.auth import get_current_user
+from pydantic import BaseModel
 
-router = APIRouter(prefix="/api/chat", tags=["聊天记录"])
+router = APIRouter(prefix="/api/chat", tags=["聊天记录"], dependencies=[Depends(get_current_user)])
 
 # 允许的扩展名
 ALLOWED_EXTS = {'.png', '.jpg', '.jpeg', '.bmp', '.gif', '.webp', '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.txt', '.csv'}
@@ -58,3 +60,28 @@ async def upload_files(
         saved_paths.append(url)
 
     return {"file_paths": saved_paths}
+
+
+@router.get("/tasks/{task_id}/comments", response_model=list[TaskCommentDTO])
+def list_comments(task_id: str, db: Session = Depends(get_db)):
+    """获取留言列表"""
+    return ChatMessageService(db).list_comments(task_id)
+
+
+@router.post("/tasks/{task_id}/comments", response_model=TaskCommentDTO)
+def add_comment(
+    task_id: str,
+    content: str = Form(...),
+    author_name: str = Form(None),
+    author_id: int = Form(None),
+    db: Session = Depends(get_db),
+):
+    """内勤新增留言"""
+    return ChatMessageService(db).add_comment(task_id, content, author_name, author_id)
+
+
+
+@router.put("/tasks/{task_id}/status")
+def update_status(task_id: str, body: StatusUpdateDTO, db: Session = Depends(get_db)):
+    """修改任务状态"""
+    return ChatMessageService(db).update_task_status(task_id, body.status, body.reject_reason)

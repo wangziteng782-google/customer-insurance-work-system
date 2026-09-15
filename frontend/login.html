@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>登录 - 易梯保险系统</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: #0f172a;
+    background-image:
+      radial-gradient(ellipse 80% 50% at 20% 80%, rgba(22, 119, 255, 0.25), transparent),
+      radial-gradient(ellipse 60% 40% at 80% 20%, rgba(59, 130, 246, 0.18), transparent),
+      linear-gradient(135deg, #1e3a5f 0%, #0f172a 100%);
+  }
+  .login-card {
+    width: 380px;
+    padding: 48px 40px;
+    background: #ffffff;
+    border-radius: 16px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  }
+  .login-logo {
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    margin-bottom: 24px;
+    object-fit: contain;
+  }
+  .login-title {
+    font-size: 22px;
+    font-weight: 600;
+    color: #1a1a2e;
+    margin-bottom: 8px;
+  }
+  .login-subtitle {
+    font-size: 13px;
+    color: #999;
+    margin-bottom: 32px;
+  }
+  .form-group {
+    margin-bottom: 18px;
+  }
+  .form-group label {
+    display: block;
+    font-size: 13px;
+    color: #555;
+    margin-bottom: 6px;
+    font-weight: 500;
+  }
+  .form-group input {
+    width: 100%;
+    height: 42px;
+    padding: 0 14px;
+    border: 1px solid #d9d9d9;
+    border-radius: 8px;
+    font-size: 14px;
+    color: #333;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .form-group input:focus {
+    border-color: #1677ff;
+    box-shadow: 0 0 0 3px rgba(22, 119, 255, 0.1);
+  }
+  .login-btn {
+    width: 100%;
+    height: 42px;
+    margin-top: 8px;
+    border: none;
+    border-radius: 8px;
+    background: #1677ff;
+    color: #fff;
+    font-size: 15px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  .login-btn:hover { background: #4096ff; }
+  .login-btn:active { background: #0958d9; }
+  .login-btn:disabled { background: #a0c4ff; cursor: not-allowed; }
+  .error-msg {
+    margin-top: 14px;
+    padding: 10px 14px;
+    background: #fff2f0;
+    border: 1px solid #ffccc7;
+    border-radius: 6px;
+    color: #ff4d4f;
+    font-size: 13px;
+    display: none;
+  }
+  .error-msg.show { display: block; }
+</style>
+</head>
+<body>
+<div class="login-card">
+  <img class="login-logo" src="images/logo.png" alt="Logo" onerror="this.style.display='none'">
+  <div class="login-title">易梯保险系统</div>
+  <div class="login-subtitle">请使用手机号登录</div>
+
+  <form id="loginForm">
+    <div class="form-group">
+      <label for="phone">手机号</label>
+      <input type="tel" id="phone" placeholder="请输入手机号" autocomplete="tel" maxlength="11">
+    </div>
+    <div class="form-group">
+      <label for="password">密码</label>
+      <input type="password" id="password" placeholder="请输入密码" autocomplete="current-password">
+    </div>
+    <button type="submit" class="login-btn" id="loginBtn">登 录</button>
+  </form>
+
+  <div class="error-msg" id="errorMsg"></div>
+</div>
+
+<script>
+document.getElementById('loginForm').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  var phone = document.getElementById('phone').value.trim();
+  var password = document.getElementById('password').value;
+  var errorMsg = document.getElementById('errorMsg');
+  var btn = document.getElementById('loginBtn');
+
+  errorMsg.classList.remove('show');
+  errorMsg.textContent = '';
+
+  if (!phone || !password) {
+    errorMsg.textContent = '请输入手机号和密码';
+    errorMsg.classList.add('show');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = '登录中...';
+
+  try {
+    var formData = new FormData();
+    formData.append('phone', phone);
+    formData.append('password', password);
+
+    var resp = await fetch('/api/users/login', { method: 'POST', body: formData });
+    if (!resp.ok) {
+      errorMsg.textContent = '手机号或密码错误';
+      errorMsg.classList.add('show');
+      btn.disabled = false;
+      btn.textContent = '登 录';
+      return;
+    }
+
+    var user = await resp.json();
+    localStorage.setItem('token', user.token);
+    localStorage.setItem('currentUser', JSON.stringify(user));
+    window.location.href = 'index.html';
+  } catch (err) {
+    errorMsg.textContent = '网络错误，请稍后重试';
+    errorMsg.classList.add('show');
+    btn.disabled = false;
+    btn.textContent = '登 录';
+  }
+});
+</script>
+</body>
+</html>

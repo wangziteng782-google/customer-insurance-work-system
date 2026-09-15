@@ -1,4 +1,4 @@
-"""聊天面板 - 顶部状态栏 + 消息列表 + 输入区"""
+"""聊天面板 - 顶部状态栏 + 消息列表 + 输入区（同步上传）"""
 import os
 import secrets
 import tempfile
@@ -6,27 +6,26 @@ from datetime import datetime
 
 from PySide6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QTextEdit, QLabel,
-    QWidget, QFileDialog, QFrame,
+    QWidget, QFileDialog, QFrame, QProgressBar,
     QApplication, QDialog, QDialogButtonBox, QRadioButton,
     QComboBox, QCompleter, QFormLayout, QLineEdit
 )
-from PySide6.QtCore import Signal, Qt, QTimer
-from PySide6.QtGui import QDragEnterEvent, QDropEvent, QKeySequence
+from PySide6.QtCore import Signal, Qt, QTimer, QThread
+from PySide6.QtGui import QDragEnterEvent, QDropEvent, QKeySequence, QPixmap
 from qfluentwidgets import PushButton, ScrollArea
 
-from client.api import create_chat_message, list_chat_messages, upload_files
+from client.api import create_chat_message, list_chat_messages, list_task_comments, upload_files
 from client.ui.widgets.chat_message import ChatMessage
 
 # ── 设计令牌 ──
-_PRIMARY = "#1677ff"        # 蓝色 - 主色
-_ACCENT = "#d4a853"         # 金色 - 强调
-_PRIMARY_LIGHT = "#e8f4ff"  # 浅蓝背景
-_TOP_BG = "#f8f9fa"         # 顶部栏背景
-_BORDER = "#e5e7eb"         # 边框
-_TEXT_PRIMARY = "#1a1a2e"   # 主文字
-_TEXT_SECONDARY = "#6b7280" # 次文字
+_PRIMARY = "#1677ff"
+_ACCENT = "#d4a853"
+_PRIMARY_LIGHT = "#e8f4ff"
+_TOP_BG = "#f8f9fa"
+_BORDER = "#e5e7eb"
+_TEXT_PRIMARY = "#1a1a2e"
+_TEXT_SECONDARY = "#6b7280"
 
-# 输入框样式
 _NORMAL_INPUT_STYLE = f"""
     QFrame {{
         border: 1px solid {_BORDER};
@@ -51,7 +50,7 @@ _DRAG_INPUT_STYLE = f"""
 
 
 class NewPolicyDialog(QDialog):
-    """新建保单收集对话框 - 选择保险公司和类型"""
+    """新建保单收集对话框"""
 
     INSURANCE_COMPANIES = [
         "人保财险", "平安保险", "太平洋保险", "国寿财险",
@@ -65,7 +64,6 @@ class NewPolicyDialog(QDialog):
         self._init_ui()
 
     def _init_ui(self) -> None:
-        # 整体样式 — 一次性设置，避免逐控件重绘
         self.setStyleSheet("""
             QLabel { font-size: 13px; color: #3a3a4a; }
             QComboBox { border: 1px solid #d9d9d9; border-radius: 6px; padding: 0 10px; font-size: 13px; }
@@ -80,18 +78,15 @@ class NewPolicyDialog(QDialog):
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(16)
 
-        # 标题
         title = QLabel("新建保单收集")
         title.setStyleSheet("font-size: 16px; font-weight: bold; color: #1a1a2e;")
         layout.addWidget(title)
 
-        # 表单
         form = QFormLayout()
         form.setSpacing(12)
         form.setLabelAlignment(Qt.AlignLeft)
         form.setFormAlignment(Qt.AlignTop)
 
-        # 保险公司（可搜索下拉）
         self.company_combo = QComboBox()
         self.company_combo.setEditable(True)
         self.company_combo.setInsertPolicy(QComboBox.NoInsert)
@@ -104,31 +99,25 @@ class NewPolicyDialog(QDialog):
         self.company_combo.setFixedHeight(36)
         form.addRow("保险公司 *", self.company_combo)
 
-        # 客户公司
         self.customer_edit = QLineEdit()
         self.customer_edit.setPlaceholderText("输入客户公司名称")
         self.customer_edit.setFixedHeight(36)
         form.addRow("客户公司 *", self.customer_edit)
 
-        # 保单类型
         type_widget = QWidget()
         type_layout = QHBoxLayout(type_widget)
         type_layout.setContentsMargins(0, 0, 0, 0)
         type_layout.setSpacing(10)
-
         self.rb_new = QRadioButton("新投")
         self.rb_endorsement = QRadioButton("批改")
         self.rb_new.setChecked(True)
         type_layout.addWidget(self.rb_new)
         type_layout.addWidget(self.rb_endorsement)
         type_layout.addStretch()
-
         form.addRow("保单类型 *", type_widget)
         layout.addLayout(form)
-
         layout.addStretch()
 
-        # 按钮
         btn_box = QDialogButtonBox(
             QDialogButtonBox.Cancel | QDialogButtonBox.Ok,
             Qt.Horizontal, self
@@ -155,7 +144,6 @@ class NewPolicyDialog(QDialog):
         return self.customer_edit.text().strip()
 
     def accept(self) -> None:
-        """提交前校验必填项"""
         if not self.get_company():
             self.company_combo.setFocus()
             return
@@ -172,17 +160,15 @@ class ImageTextEdit(QTextEdit):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setAcceptDrops(True)
-        self.on_send: callable = None  # 回车发送回调
+        self.on_send: callable = None
 
     def focusInEvent(self, event):
-        """聚焦时父框变主色"""
         frame = self.parent()
         if isinstance(frame, QFrame):
             frame.setStyleSheet(_FOCUS_INPUT_STYLE)
         super().focusInEvent(event)
 
     def focusOutEvent(self, event):
-        """失焦恢复默认"""
         frame = self.parent()
         if isinstance(frame, QFrame):
             frame.setStyleSheet(_NORMAL_INPUT_STYLE)
@@ -205,7 +191,6 @@ class ImageTextEdit(QTextEdit):
             super().dropEvent(event)
 
     def keyPressEvent(self, event):
-        # 回车发送 / Ctrl+回车换行
         if event.key() in (Qt.Key_Return, Qt.Key_Enter):
             if event.modifiers() & Qt.ControlModifier:
                 self.insertPlainText("\n")
@@ -232,11 +217,32 @@ class ImageTextEdit(QTextEdit):
         super().keyPressEvent(event)
 
 
+class _ChatHistoryLoader(QThread):
+    """后台拉取聊天记录 + 留言数据，避免阻塞 UI"""
+
+    loaded = Signal(list, list)   # messages, comments
+    failed = Signal(str)
+
+    def __init__(self, task_id: str, parent=None):
+        super().__init__(parent)
+        self._task_id = task_id
+
+    def run(self) -> None:
+        try:
+            messages = list_chat_messages(self._task_id)
+            comments = list_task_comments(self._task_id)
+            self.loaded.emit(messages, comments)
+        except Exception as e:
+            self.failed.emit(str(e))
+
+
 class ChatPanel(QWidget):
     """聊天面板 - 对话式保单资料收集"""
 
-    # 新建任务时发射，携带 task_id
     task_created = Signal(str)
+
+    # 类级引用集合，防止后台拉取线程被 Python GC 回收
+    _active_history_loaders: set = set()
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -245,6 +251,8 @@ class ChatPanel(QWidget):
         self._insurance_company: str = ""
         self._policy_type: int = 1
         self._customer_company: str = ""
+        self._history_gen: int = 0          # 用于丢弃旧请求结果
+        self._loading_label: QLabel | None = None
         self._init_ui()
 
     def _init_ui(self) -> None:
@@ -253,11 +261,9 @@ class ChatPanel(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        # ── 顶部状态栏 ──
         self.top_bar = self._create_top_bar()
         layout.addWidget(self.top_bar)
 
-        # ── 消息滚动区 ──
         self.scroll_area = ScrollArea()
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -273,20 +279,14 @@ class ChatPanel(QWidget):
         self.scroll_area.setWidget(self.msg_container)
         layout.addWidget(self.scroll_area, 1)
 
-        # ── 输入区 ──
         input_area = self._create_input_area()
         layout.addWidget(input_area)
 
-        # 初始禁用输入区（需先创建任务）
         self._set_input_enabled(False)
 
-        # 欢迎消息
-        self._add_message(
-            "你好！可粘贴客户资料或拖拽图片到输入框，点击发送进行 AI 识别。"
-        )
+        self._add_message("你好！可粘贴客户资料或拖拽图片到输入框，点击发送进行 AI 识别。")
 
     def _create_top_bar(self) -> QWidget:
-        """创建顶部状态栏"""
         bar = QWidget()
         bar.setFixedHeight(44)
         bar.setStyleSheet(f"background-color: {_TOP_BG}; border-bottom: 1px solid {_BORDER};")
@@ -294,29 +294,26 @@ class ChatPanel(QWidget):
         layout = QHBoxLayout(bar)
         layout.setContentsMargins(16, 0, 16, 0)
 
-        # 保险公司 + 类型
         self.policy_name_label = QLabel("当前任务：未选择")
         self.policy_name_label.setStyleSheet(f"font-size: 13px; font-weight: bold; color: {_PRIMARY};")
         layout.addWidget(self.policy_name_label)
 
         layout.addSpacing(16)
 
-        # 创建日期
         self.date_label = QLabel("创建日期：-")
         self.date_label.setStyleSheet(f"font-size: 12px; color: {_TEXT_SECONDARY};")
         layout.addWidget(self.date_label)
 
         layout.addSpacing(16)
 
-        # 图片计数
         self.img_count_label = QLabel("已收集图片：0 张")
         self.img_count_label.setStyleSheet(f"font-size: 12px; color: {_TEXT_SECONDARY};")
         layout.addWidget(self.img_count_label)
 
         layout.addStretch()
 
-        # 开启新保单按钮
-        new_btn = PushButton("开启新保单收集", self)
+        self.new_btn = PushButton("开启新保单收集", self)
+        new_btn = self.new_btn
         new_btn.setFixedSize(130, 30)
         new_btn.setStyleSheet(f"""
             PushButton {{
@@ -336,7 +333,6 @@ class ChatPanel(QWidget):
         return bar
 
     def _create_input_area(self) -> QWidget:
-        """创建输入区域（含预览、文本框、快捷标签、按钮）"""
         wrapper = QWidget()
         wrapper.setStyleSheet("background-color: #ffffff; border-top: 1px solid #f0f0f0;")
         outer = QVBoxLayout(wrapper)
@@ -344,11 +340,10 @@ class ChatPanel(QWidget):
         outer.setSpacing(6)
 
         # 上传进度条（平时隐藏）
-        from PySide6.QtWidgets import QProgressBar
         self.upload_progress = QProgressBar()
         self.upload_progress.setMaximumHeight(3)
         self.upload_progress.setTextVisible(False)
-        self.upload_progress.setRange(0, 0)  # 不定模式（转圈圈）
+        self.upload_progress.setRange(0, 0)
         self.upload_progress.setStyleSheet(f"""
             QProgressBar {{
                 border: none;
@@ -362,16 +357,9 @@ class ChatPanel(QWidget):
         self.upload_progress.hide()
         outer.addWidget(self.upload_progress)
 
-        # 输入框容器（带拖拽）
         self.input_frame = QFrame()
         self.input_frame.setAcceptDrops(True)
-        self.input_frame.setStyleSheet(f"""
-            QFrame {{
-                border: 1px solid {_BORDER};
-                border-radius: 10px;
-                background-color: #ffffff;
-            }}
-        """)
+        self.input_frame.setStyleSheet(_NORMAL_INPUT_STYLE)
         self.input_frame.dragEnterEvent = self._on_drag_enter
         self.input_frame.dragLeaveEvent = self._on_drag_leave
         self.input_frame.dropEvent = self._on_drop
@@ -380,7 +368,6 @@ class ChatPanel(QWidget):
         frame_layout.setContentsMargins(0, 0, 0, 0)
         frame_layout.setSpacing(0)
 
-        # 预览区
         self.preview_wrap = QWidget()
         self.preview_wrap.hide()
         self.preview_layout = QHBoxLayout(self.preview_wrap)
@@ -389,7 +376,6 @@ class ChatPanel(QWidget):
         self.preview_layout.setAlignment(Qt.AlignLeft)
         frame_layout.addWidget(self.preview_wrap)
 
-        # 文本输入框（支持拖拽图片 + 粘贴图片）
         self.text_edit = ImageTextEdit(self.input_frame)
         self.text_edit.setPlaceholderText("输入文字，拖拽/粘贴图片，点击发送")
         self.text_edit.setMinimumHeight(56)
@@ -412,14 +398,11 @@ class ChatPanel(QWidget):
         """)
         frame_layout.addWidget(self.text_edit)
 
-        # 底部按钮行 - 上传和发送靠右并排
         btn_row = QHBoxLayout()
         btn_row.setContentsMargins(12, 0, 10, 8)
         btn_row.setSpacing(8)
-
         btn_row.addStretch()
 
-        # 上传按钮
         self.upload_btn = PushButton("上传图片", self)
         upload_btn = self.upload_btn
         upload_btn.setFixedSize(70, 28)
@@ -440,7 +423,6 @@ class ChatPanel(QWidget):
         upload_btn.clicked.connect(self._on_upload)
         btn_row.addWidget(upload_btn)
 
-        # 发送按钮
         self.send_btn = PushButton("发送", self)
         send_btn = self.send_btn
         send_btn.setFixedSize(58, 28)
@@ -465,10 +447,7 @@ class ChatPanel(QWidget):
 
         return wrapper
 
-    # ── 输入区状态 ──
-
     def _set_input_enabled(self, enabled: bool) -> None:
-        """启用/禁用输入区"""
         self.text_edit.setEnabled(enabled)
         self.upload_btn.setEnabled(enabled)
         self.send_btn.setEnabled(enabled)
@@ -478,59 +457,54 @@ class ChatPanel(QWidget):
         else:
             self.text_edit.setPlaceholderText("请先点击「开启新保单收集」创建任务")
 
-    # ── 消息操作 ──
-
-    def _add_message(self, content: str, file_paths: list[str] | None = None) -> None:
-        """添加一条消息到列表"""
-        msg = ChatMessage(content=content, file_paths=file_paths)
-        # 插入到 stretch 之前
+    def _add_message(self, content: str, file_paths: list[str] | None = None,
+                     is_handler: bool = False) -> None:
+        msg = ChatMessage(content=content, file_paths=file_paths, is_handler=is_handler)
         self.msg_layout.insertWidget(self.msg_layout.count() - 1, msg)
-        # 滚动到底部
         QTimer.singleShot(50, self._scroll_to_bottom)
 
     def _scroll_to_bottom(self) -> None:
-        """滚动到底部"""
         scrollbar = self.scroll_area.verticalScrollBar()
         scrollbar.setValue(scrollbar.maximum())
 
     def add_user_message(self, text: str, file_paths: list[str] | None = None) -> None:
-        """添加消息"""
         self._add_message(text, file_paths=file_paths)
 
     def clear_messages(self) -> None:
         """清空所有消息"""
-        while self.msg_layout.count() > 1:  # 保留 stretch
+        while self.msg_layout.count() > 1:
             item = self.msg_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
-
-    # ── 事件处理 ──
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+        self._files.clear()
 
     @staticmethod
     def _generate_task_id() -> str:
-        """客户端生成任务编号"""
         return "TK-" + secrets.token_hex(4).upper()
 
     def _on_send(self) -> str | None:
-        """发送按钮，返回新建任务的 task_id（如果有）"""
+        """发送按钮 - 同步上传"""
         text = self.text_edit.toPlainText().strip()
         if not text and not self._files:
             return None
 
         new_task_id = None
-        # 客户端生成 task_id（避免发空 system 消息）
         if not self._current_task_id:
             self._current_task_id = self._generate_task_id()
             new_task_id = self._current_task_id
 
-        # 上传文件
-        file_paths = []
+        # 有文件 → 同步上传
+        file_paths: list[str] = []
         if self._files:
             self.upload_progress.show()
             self.upload_btn.setEnabled(False)
             self.send_btn.setEnabled(False)
+            self.new_btn.setEnabled(False)
+            # 让进度条先显示
+            QApplication.processEvents()
             try:
-                result = upload_files(self._current_task_id, self._files)
+                result = upload_files(self._current_task_id, self._files[:])
                 file_paths = result.get("file_paths", [])
             except Exception as e:
                 print(f"文件上传失败: {e}")
@@ -538,15 +512,19 @@ class ChatPanel(QWidget):
                 self.upload_progress.hide()
                 self.upload_btn.setEnabled(True)
                 self.send_btn.setEnabled(True)
+                self.new_btn.setEnabled(True)
 
-        # 添加用户消息到界面（带图片缩略图）
+        self._do_send(text, file_paths, new_task_id)
+        return new_task_id
+
+    def _do_send(self, text: str, file_paths: list[str], new_task_id: str | None):
+        """实际发送逻辑"""
         if text or file_paths:
             self.add_user_message(text, file_paths=file_paths if file_paths else None)
 
-        # 保存消息到后端
         if text or file_paths:
             try:
-                result = create_chat_message(
+                create_chat_message(
                     task_id=self._current_task_id,
                     content=text,
                     file_paths=file_paths if file_paths else None,
@@ -558,24 +536,20 @@ class ChatPanel(QWidget):
             except Exception as e:
                 print(f"保存消息失败: {e}")
 
-        # 通知外部有新任务创建
         if new_task_id:
             self.task_created.emit(new_task_id)
 
-        # 清空输入
         self.text_edit.clear()
         self._files.clear()
         self._refresh_preview()
         self._set_drag_style(False)
 
     def _on_image_pasted(self, path: str) -> None:
-        """拖拽或粘贴的图片"""
         if path not in self._files:
             self._files.append(path)
             self._refresh_preview()
 
     def _on_upload(self) -> None:
-        """上传文件"""
         files, _ = QFileDialog.getOpenFileNames(
             self, "选择文件", "",
             "图片 (*.png *.jpg *.jpeg *.bmp *.gif *.webp);;"
@@ -592,7 +566,6 @@ class ChatPanel(QWidget):
         if active:
             self.input_frame.setStyleSheet(_DRAG_INPUT_STYLE)
         else:
-            # 拖拽结束时，若输入框仍聚焦则恢复焦点样式
             still_focus = self.text_edit.hasFocus()
             self.input_frame.setStyleSheet(_FOCUS_INPUT_STYLE if still_focus else _NORMAL_INPUT_STYLE)
 
@@ -615,8 +588,6 @@ class ChatPanel(QWidget):
             event.acceptProposedAction()
 
     def _refresh_preview(self) -> None:
-        """刷新预览区"""
-        # 清除旧预览
         while self.preview_layout.count():
             item = self.preview_layout.takeAt(0)
             if item.widget():
@@ -627,27 +598,20 @@ class ChatPanel(QWidget):
             return
 
         self.preview_wrap.show()
-        for idx, filepath in enumerate(self._files[:8]):  # 最多显示8个
+        for idx, filepath in enumerate(self._files[:8]):
             self._add_preview_item(idx, filepath)
 
     def _add_preview_item(self, idx: int, filepath: str) -> None:
-        """添加一个预览项（带删除按钮）"""
-        from PySide6.QtGui import QPixmap
-
         ext = os.path.splitext(filepath)[1].lower()
         image_exts = {'.png', '.jpg', '.jpeg', '.bmp', '.gif', '.webp'}
         is_image = ext in image_exts
 
-        # 容器
         item = QFrame()
         item.setFixedSize(60, 68)
         item.setStyleSheet("background-color: #f5f5f5; border: 1px solid #e8e8e8; border-radius: 6px;")
-
-        # 点击打开文件
         item.setCursor(Qt.PointingHandCursor)
         item.mousePressEvent = lambda e, p=filepath: os.startfile(p) if e.button() == Qt.LeftButton else None
 
-        # 内容区
         content = QLabel(item)
         content.setGeometry(4, 4, 52, 48)
         content.setAlignment(Qt.AlignCenter)
@@ -662,14 +626,12 @@ class ChatPanel(QWidget):
                 content.setText("图")
                 content.setStyleSheet("font-size: 10px; color: #999;")
         else:
-            # 文件类型图标
             icon_map = {'.pdf': 'PDF', '.doc': 'DOC', '.docx': 'DOC',
                         '.xls': 'XLS', '.xlsx': 'XLS', '.txt': 'TXT', '.csv': 'CSV'}
             icon = icon_map.get(ext, '文件')
             content.setText(f"📄{icon}")
             content.setStyleSheet("font-size: 11px; color: #1677ff; font-weight: bold;")
 
-            # 文件名（底部）
             name_label = QLabel(item)
             name_label.setGeometry(2, 52, 56, 14)
             name = os.path.basename(filepath)
@@ -677,7 +639,6 @@ class ChatPanel(QWidget):
             name_label.setAlignment(Qt.AlignCenter)
             name_label.setStyleSheet("font-size: 9px; color: #999; border: none; background: transparent;")
 
-        # 删除按钮（右上角 ×）
         del_btn = PushButton("×", item)
         del_btn.setGeometry(44, -2, 18, 18)
         del_btn.setStyleSheet("""
@@ -690,22 +651,18 @@ class ChatPanel(QWidget):
                 font-weight: bold;
                 padding: 0;
             }
-            PushButton:hover {
-                background-color: #ff7875;
-            }
+            PushButton:hover { background-color: #ff7875; }
         """)
         del_btn.clicked.connect(lambda checked=False, i=idx: self._on_remove_file(i))
 
         self.preview_layout.addWidget(item)
 
     def _on_remove_file(self, index: int) -> None:
-        """删除预览区的文件"""
         if 0 <= index < len(self._files):
             self._files.pop(index)
             self._refresh_preview()
 
     def _on_new_policy(self) -> None:
-        """开启新任务 - 先弹出选择对话框"""
         dialog = NewPolicyDialog(self)
         if dialog.exec() != QDialog.Accepted:
             return
@@ -726,7 +683,6 @@ class ChatPanel(QWidget):
         self._set_input_enabled(True)
 
     def set_current_task(self, task: dict | None) -> None:
-        """设置当前任务"""
         if task:
             self._current_task_id = task.get("task_id", "")
             self._insurance_company = task.get("insurance_company", "") or ""
@@ -740,7 +696,6 @@ class ChatPanel(QWidget):
                 created = str(created)[:19].replace("T", " ")
             self.date_label.setText(f"创建日期：{created}")
             self.img_count_label.setText(f"消息数：{task.get('msg_count', 0)}")
-            # 加载聊天记录
             self.clear_messages()
             self._load_chat_history(self._current_task_id)
             self._set_input_enabled(True)
@@ -748,43 +703,103 @@ class ChatPanel(QWidget):
             self._on_new_policy()
 
     def _load_chat_history(self, task_id: str) -> None:
-        """加载聊天记录（带加载状态）"""
-        # 显示加载提示
-        self.clear_messages()
-        loading_label = QLabel("加载消息中...")
-        loading_label.setAlignment(Qt.AlignCenter)
-        loading_label.setStyleSheet(f"color: {_TEXT_SECONDARY}; font-size: 13px; padding: 20px;")
-        self.msg_layout.insertWidget(self.msg_layout.count() - 1, loading_label)
-        # 让UI先刷新显示加载提示
-        QTimer.singleShot(10, lambda: self._do_load_history(task_id, loading_label))
+        """加载聊天记录 — 立即显示加载提示，后台拉取数据，主线程渲染。
 
-    def _do_load_history(self, task_id: str, loading_label: QLabel) -> None:
-        """实际加载聊天记录"""
-        try:
-            messages = list_chat_messages(task_id)
-            reordered: list[dict] = []
-            i = 0
-            while i < len(messages):
-                curr = messages[i]
-                nxt = messages[i + 1] if i + 1 < len(messages) else {}
-                if (not curr.get("content") and curr.get("file_paths")
-                        and nxt.get("content") and not nxt.get("file_paths")):
-                    reordered.append(nxt)
-                    reordered.append(curr)
-                    i += 2
-                else:
-                    reordered.append(curr)
-                    i += 1
-            # 移除加载提示
-            loading_label.deleteLater()
-            # 添加消息
-            for msg in reordered:
-                content = msg.get("content", "") or ""
-                file_paths = msg.get("file_paths") or None
-                self.add_user_message(content, file_paths=file_paths)
-        except Exception as e:
-            loading_label.setText(f"加载失败: {e}")
-            print(f"加载聊天记录失败: {e}")
+        关键点：UI 不再被图片下载阻塞。文字消息会先渲染出来，每张缩略图
+        在 ChatMessage 内部用独立后台线程加载，主线程始终流畅。
+        """
+        self.clear_messages()
+        self._show_loading_hint()  # 立即显示「加载消息中...」
+
+        # 用 generation 计数丢弃旧请求结果，避免快速切换任务时旧数据覆盖新数据
+        self._history_gen += 1
+        gen = self._history_gen
+
+        loader = _ChatHistoryLoader(task_id)
+        ChatPanel._active_history_loaders.add(loader)  # 阻止 GC
+        loader.loaded.connect(
+            lambda msgs, comments, g=gen: self._on_history_loaded(msgs, comments, g)
+        )
+        loader.failed.connect(
+            lambda err, g=gen: self._on_history_failed(err, g)
+        )
+        loader.finished.connect(
+            lambda l=loader: ChatPanel._cleanup_history_loader(l)
+        )
+        loader.start()
+
+    @staticmethod
+    def _cleanup_history_loader(loader) -> None:
+        """后台拉取线程结束：从引用集合移除并释放"""
+        ChatPanel._active_history_loaders.discard(loader)
+        loader.deleteLater()
+
+    def _show_loading_hint(self) -> None:
+        """在消息列表中显示「加载消息中...」占位"""
+        self._hide_loading_hint()
+        loading = QLabel("加载消息中...")
+        loading.setAlignment(Qt.AlignCenter)
+        loading.setStyleSheet(
+            "color: #999; font-size: 13px; padding: 24px; "
+            "background: transparent; border: none;"
+        )
+        self._loading_label = loading
+        self.msg_layout.insertWidget(self.msg_layout.count() - 1, loading)
+        QApplication.processEvents()  # 立即渲染占位符
+
+    def _hide_loading_hint(self) -> None:
+        if self._loading_label is not None:
+            self._loading_label.setParent(None)
+            self._loading_label.deleteLater()
+            self._loading_label = None
+
+    def _on_history_loaded(self, messages: list, comments: list, gen: int) -> None:
+        """后台拉取完成回调（主线程）"""
+        if gen != self._history_gen:
+            return  # 旧请求结果，丢弃
+        self._hide_loading_hint()
+        self._render_history(messages, comments)
+
+    def _on_history_failed(self, err: str, gen: int) -> None:
+        """后台拉取失败回调（主线程）"""
+        if gen != self._history_gen:
+            return
+        self._hide_loading_hint()
+        self._add_message(f"加载失败: {err}")
+
+    def _render_history(self, messages: list, comments: list) -> None:
+        """主线程渲染聊天记录：合并 + 排序 + 逐条添加（图片异步加载）"""
+        # 合并 + 排序
+        timeline: list[tuple[str, str, dict]] = []
+        for msg in messages:
+            timeline.append(("user", msg.get("created_at", ""), msg))
+        for c in comments:
+            timeline.append(("handler", c.get("created_at", ""), c))
+        timeline.sort(key=lambda x: x[1])
+
+        # 重排：文字在前、图片在后
+        reordered: list[tuple[str, str, dict]] = []
+        i = 0
+        while i < len(timeline):
+            curr_type, curr_time, curr = timeline[i]
+            nxt_type, nxt_time, nxt = timeline[i + 1] if i + 1 < len(timeline) else ("", "", {})
+            if (curr_type == nxt_type == "user"
+                    and not curr.get("content") and curr.get("file_paths")
+                    and nxt.get("content") and not nxt.get("file_paths")):
+                reordered.append((nxt_type, nxt_time, nxt))
+                reordered.append((curr_type, curr_time, curr))
+                i += 2
+            else:
+                reordered.append((curr_type, curr_time, curr))
+                i += 1
+
+        # 逐条渲染（文字立即可见，缩略图在后台线程加载）
+        for item_type, _, data in reordered:
+            content = data.get("content", "") or ""
+            file_paths = data.get("file_paths") or None
+            is_handler = (item_type == "handler")
+            self._add_message(content, file_paths=file_paths, is_handler=is_handler)
+            QApplication.processEvents()  # 让每条文字消息立即显示
 
     def clear(self) -> None:
         """清空输入"""

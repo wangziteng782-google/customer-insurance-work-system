@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     QINIU_BUCKET: str = "yiti-zt-price"
     QINIU_DOMAIN: str = "http://price.yitipeijian.com"  # 例如 https://cdn.xxx.com
 
+    # 认证密钥（生产环境通过 .env 覆盖）
+    AUTH_SECRET: str = "change-me-to-long-random-string"
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

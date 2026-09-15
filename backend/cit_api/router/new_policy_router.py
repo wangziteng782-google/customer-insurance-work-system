@@ -1,11 +1,12 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from cit_api.database import get_db
 from cit_api.dto.new_policy_dto import NewPolicyCreateDTO, NewPolicyUpdateDTO, NewPolicyOutDTO
 from cit_api.service.new_policy_service import NewPolicyService
+from cit_api.auth import get_current_user
 
-router = APIRouter(prefix="/api/new-policies", tags=["新投"])
+router = APIRouter(prefix="/api/new-policies", tags=["新投"], dependencies=[Depends(get_current_user)])
 
 
 @router.post("", response_model=NewPolicyOutDTO)
@@ -23,10 +24,18 @@ def list_new_policies(skip: int = 0, limit: int = 100, db: Session = Depends(get
 @router.get("/{policy_id}", response_model=NewPolicyOutDTO)
 def get_new_policy(policy_id: int, db: Session = Depends(get_db)):
     """查看单条新投"""
-    return NewPolicyService(db).get_by_id(policy_id)
+    svc = NewPolicyService(db)
+    policy = svc.get_by_id(policy_id)
+    if policy is None:
+        raise HTTPException(404, "新投不存在")
+    return policy
 
 
 @router.put("/{policy_id}", response_model=NewPolicyOutDTO)
 def update_new_policy(policy_id: int, payload: NewPolicyUpdateDTO, db: Session = Depends(get_db)):
     """编辑更新新投"""
-    return NewPolicyService(db).update(policy_id, payload)
+    svc = NewPolicyService(db)
+    policy = svc.update(policy_id, payload)
+    if policy is None:
+        raise HTTPException(404, "新投不存在")
+    return policy

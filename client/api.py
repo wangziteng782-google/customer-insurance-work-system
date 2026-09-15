@@ -2,7 +2,7 @@
 import requests
 
 # 后端 API 地址，按实际部署修改
-BASE_URL = "http://192.168.1.9:8000"
+BASE_URL = "http://192.168.1.9:8001"
 
 
 def create_new_policy(data: dict) -> dict:
@@ -174,6 +174,36 @@ def change_password(user_id: int, old_password: str, new_password: str) -> dict:
     resp = requests.put(
         f"{BASE_URL}/api/users/{user_id}/password",
         data={"old_password": old_password, "new_password": new_password},
+        timeout=5,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+# ── 任务留言 API ──
+
+def list_task_comments(task_id: str) -> list[dict]:
+    """获取任务留言列表"""
+    resp = requests.get(
+        f"{BASE_URL}/api/chat/tasks/{task_id}/comments",
+        timeout=3,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+def add_task_comment(task_id: str, content: str,
+                     author_name: str | None = None,
+                     author_id: int | None = None) -> dict:
+    """新增留言"""
+    data = {"content": content}
+    if author_name is not None:
+        data["author_name"] = author_name
+    if author_id is not None:
+        data["author_id"] = author_id
+    resp = requests.post(
+        f"{BASE_URL}/api/chat/tasks/{task_id}/comments",
+        data=data,
         timeout=5,
     )
     resp.raise_for_status()

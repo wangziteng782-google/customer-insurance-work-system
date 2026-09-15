@@ -5,8 +5,9 @@ from sqlalchemy.orm import Session
 from cit_api.database import get_db
 from cit_api.service.qwen_service import extract_insurance_info
 from cit_api.service.message_service import ChatMessageService
+from cit_api.auth import get_current_user
 
-router = APIRouter(prefix="/api/ai", tags=["AI识别"])
+router = APIRouter(prefix="/api/ai", tags=["AI识别"], dependencies=[Depends(get_current_user)])
 
 
 @router.post("/recognize")

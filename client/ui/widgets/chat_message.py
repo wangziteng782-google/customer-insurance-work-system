@@ -1,6 +1,5 @@
-"""聊天消息气泡组件 - 支持文本 + 图片缩略图（异步加载 + 点击放大）"""
+"""聊天消息气泡组件 - 支持文本 + 图片缩略图（异步加载）"""
 import os
-import weakref
 
 import requests
 
@@ -8,7 +7,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QLabel, QWidget, QSizePolicy,
     QDialog, QScrollArea,
 )
-from PySide6.QtCore import Qt, QThread, Signal, QSemaphore, QEvent
+from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtGui import QPixmap
 
 from client.api import BASE_URL
@@ -16,32 +15,6 @@ from client.api import BASE_URL
 # ── 设计令牌 ──
 _PRIMARY = "#1677ff"
 _USER_TEXT = "#ffffff"
-
-# 并发控制：最多 4 个线程同时下载
-_download_sem = QSemaphore(4)
-
-
-class ImageLoader(QThread):
-    """异步加载图片的工作线程"""
-    loaded = Signal(str, QPixmap)
-
-    def __init__(self, url: str, timeout: int = 10):
-        super().__init__()
-        self._url = url
-        self._timeout = timeout
-
-    def run(self):
-        _download_sem.acquire()
-        pixmap = QPixmap()
-        try:
-            resp = requests.get(self._url, timeout=self._timeout)
-            if resp.status_code == 200:
-                pixmap.loadFromData(resp.content)
-        except Exception:
-            pass
-        finally:
-            _download_sem.release()
-        self.loaded.emit(self._url, pixmap)
 
 
 class ImageViewer(QDialog):
@@ -73,19 +46,17 @@ class ImageViewer(QDialog):
         layout.addWidget(self.scroll)
 
     def _load(self):
-        self._loader = ImageLoader(self._url, timeout=15)
-        self._loader.loaded.connect(self._on_loaded)
-        self._loader.finished.connect(self._loader.deleteLater)
-        self._loader.start()
+        """同步加载图片"""
+        pixmap = QPixmap()
+        try:
+            resp = requests.get(self._url, timeout=15)
+            if resp.status_code == 200:
+                pixmap.loadFromData(resp.content)
+        except Exception:
+            pass
+        self._on_loaded(pixmap)
 
-    def closeEvent(self, event):
-        # 关闭窗口前停止下载线程
-        if hasattr(self, '_loader'):
-            self._loader.terminate()
-            self._loader.wait()
-        super().closeEvent(event)
-
-    def _on_loaded(self, _, pixmap: QPixmap):
+    def _on_loaded(self, pixmap: QPixmap):
         if pixmap.isNull():
             self.image_label.setText("加载失败")
             return
@@ -106,30 +77,47 @@ class ImageViewer(QDialog):
             self._fit()
 
 
+class _ThumbnailLoader(QThread):
+    """后台加载单张缩略图，避免阻塞 UI 主线程"""
+
+    loaded = Signal(QPixmap)
+
+    def __init__(self, url: str, parent=None):
+        super().__init__(parent)
+        self._url = url
+
+    def run(self) -> None:
+        pixmap = QPixmap()
+        if self._url:
+            try:
+                resp = requests.get(self._url, timeout=10)
+                if resp.status_code == 200:
+                    pixmap.loadFromData(resp.content)
+            except Exception:
+                pass
+        self.loaded.emit(pixmap)
+
+
 class ChatMessage(QWidget):
     """单条聊天消息气泡 - 支持文本和图片"""
 
     SUPPORTED_IMAGE_EXTS = {'.png', '.jpg', '.jpeg', '.bmp', '.gif', '.webp'}
 
+    # 类级引用集合，防止后台加载线程被 Python GC 回收
+    _active_loaders: set = set()
+
     def __init__(
         self,
         content: str,
         file_paths: list[str] | None = None,
+        is_handler: bool = False,
         parent: QWidget | None = None,
     ):
         super().__init__(parent)
         self._content = content
         self._file_paths = file_paths or []
-        self._loaders: list[ImageLoader] = []  # 持有线程引用，销毁前停止
+        self._is_handler = is_handler
         self._init_ui()
-
-    def event(self, event: QEvent) -> bool:
-        # widget 被删除前，强制停止所有下载线程（requests 阻塞中 quit 无效）
-        if event.type() == QEvent.DeferredDelete:
-            for loader in self._loaders:
-                loader.terminate()
-                loader.wait()
-        return super().event(event)
 
     def _init_ui(self) -> None:
         outer = QHBoxLayout(self)
@@ -144,61 +132,83 @@ class ChatMessage(QWidget):
         layout.setContentsMargins(12, 10, 12, 10)
         layout.setSpacing(6)
 
+        # 内勤标签（仅 handler 留言显示）
+        if self._is_handler:
+            tag = QLabel("内勤留言")
+            tag.setStyleSheet("font-size: 11px; color: #999; background: transparent; border: none;")
+            layout.addWidget(tag)
+
         # 文字内容
         if self._content:
             text_label = QLabel(self._content)
             text_label.setWordWrap(True)
             text_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
-            text_label.setStyleSheet(
-                f"font-size: 13px; line-height: 1.55; color: {_USER_TEXT}; background: transparent; border: none;"
-            )
+            text_label.setStyleSheet(self._text_style())
             layout.addWidget(text_label)
 
-        # 图片缩略图（异步加载）
-        image_paths = [p for p in self._file_paths if self._is_image(p)]
-        if image_paths:
-            img_row = QHBoxLayout()
-            img_row.setSpacing(4)
-            img_row.setAlignment(Qt.AlignLeft)
-            for path in image_paths[:4]:
-                thumb = self._make_thumbnail_async(path)
-                img_row.addWidget(thumb)
-            if len(image_paths) > 4:
-                more_label = QLabel(f"+{len(image_paths) - 4}")
-                more_label.setStyleSheet("font-size: 12px; color: #ccc; background: transparent; padding-left: 4px;")
-                img_row.addWidget(more_label)
-            layout.addLayout(img_row)
+        # 图片缩略图（同步加载）— 仅用户消息展示
+        if not self._is_handler:
+            image_paths = [p for p in self._file_paths if self._is_image(p)]
+            if image_paths:
+                img_row = QHBoxLayout()
+                img_row.setSpacing(4)
+                img_row.setAlignment(Qt.AlignLeft)
+                for path in image_paths[:4]:
+                    thumb = self._make_thumbnail(path)
+                    img_row.addWidget(thumb)
+                if len(image_paths) > 4:
+                    more_label = QLabel(f"+{len(image_paths) - 4}")
+                    more_label.setStyleSheet("font-size: 12px; color: #ccc; background: transparent; padding-left: 4px;")
+                    img_row.addWidget(more_label)
+                layout.addLayout(img_row)
 
-        # 文件附件（非图片）
-        file_paths = [p for p in self._file_paths if not self._is_image(p)]
-        if file_paths:
-            file_row = QHBoxLayout()
-            file_row.setSpacing(4)
-            file_row.setAlignment(Qt.AlignLeft)
-            for path in file_paths[:3]:
-                file_chip = self._make_file_chip(path)
-                file_row.addWidget(file_chip)
-            if len(file_paths) > 3:
-                more_label = QLabel(f"+{len(file_paths) - 3}")
-                more_label.setStyleSheet("font-size: 12px; color: #ccc; background: transparent; padding-left: 4px;")
-                file_row.addWidget(more_label)
-            layout.addLayout(file_row)
+            # 文件附件（非图片）
+            file_paths = [p for p in self._file_paths if not self._is_image(p)]
+            if file_paths:
+                file_row = QHBoxLayout()
+                file_row.setSpacing(4)
+                file_row.setAlignment(Qt.AlignLeft)
+                for path in file_paths[:3]:
+                    file_chip = self._make_file_chip(path)
+                    file_row.addWidget(file_chip)
+                if len(file_paths) > 3:
+                    more_label = QLabel(f"+{len(file_paths) - 3}")
+                    more_label.setStyleSheet("font-size: 12px; color: #ccc; background: transparent; padding-left: 4px;")
+                    file_row.addWidget(more_label)
+                layout.addLayout(file_row)
 
-        bubble.setStyleSheet(f"""
+        bubble.setStyleSheet(self._bubble_style())
+        outer.addStretch()
+        outer.addWidget(bubble)
+
+    def _bubble_style(self) -> str:
+        """气泡样式：用户蓝色 / 内勤灰色"""
+        if self._is_handler:
+            return """
+                QWidget {
+                    background-color: #f0f0f0;
+                    border-radius: 12px 2px 12px 12px;
+                }
+            """
+        return f"""
             QWidget {{
                 background-color: {_PRIMARY};
                 border-radius: 12px 2px 12px 12px;
             }}
-        """)
-        outer.addStretch()
-        outer.addWidget(bubble)
+        """
+
+    def _text_style(self) -> str:
+        """文字样式：用户白色 / 内勤深色"""
+        if self._is_handler:
+            return "font-size: 13px; line-height: 1.55; color: #1a1a2e; background: transparent; border: none;"
+        return f"font-size: 13px; line-height: 1.55; color: {_USER_TEXT}; background: transparent; border: none;"
 
     def _is_image(self, path: str) -> bool:
         ext = os.path.splitext(path)[1].lower()
         return ext in self.SUPPORTED_IMAGE_EXTS
 
-    def _make_thumbnail_async(self, path: str) -> QLabel:
-        """创建异步加载的缩略图"""
+    def _make_thumbnail(self, path: str) -> QLabel:
+        """创建缩略图 — 先展示占位符，后台线程加载图片，不阻塞 UI"""
         label = QLabel("加载中...")
         label.setFixedSize(80, 80)
         label.setAlignment(Qt.AlignCenter)
@@ -211,16 +221,43 @@ class ChatMessage(QWidget):
         url = self._to_url(path)
         label.mousePressEvent = lambda e, u=url: self._open_viewer(u)
 
-        if url:
-            ref = weakref.ref(label)  # widget 销毁后 ref() 返回 None
-            loader = ImageLoader(url)
-            # loaded 信号发射 (url, pixmap)，lambda 必须接收两个位置参数
-            loader.loaded.connect(lambda _url, pix, r=ref: _apply_thumbnail(r, pix))
-            loader.finished.connect(loader.deleteLater)
-            self._loaders.append(loader)
-            loader.start()
-
+        # 后台线程加载图片；主线程仅创建占位符，立即可见
+        loader = _ThumbnailLoader(url)
+        loader._label = label  # 供主线程 slot 取回对应 label
+        ChatMessage._active_loaders.add(loader)  # 阻止 GC
+        loader.loaded.connect(self._on_thumbnail_loaded)
+        loader.finished.connect(lambda l=loader: ChatMessage._cleanup_loader(l))
+        loader.start()
         return label
+
+    @staticmethod
+    def _cleanup_loader(loader) -> None:
+        """加载线程结束：从引用集合移除并释放"""
+        ChatMessage._active_loaders.discard(loader)
+        loader.deleteLater()
+
+    def _on_thumbnail_loaded(self, pixmap: QPixmap) -> None:
+        """图片下载完成回调（主线程执行）"""
+        loader = self.sender()
+        if loader is None:
+            return
+        label = getattr(loader, "_label", None)
+        if label is None:
+            return
+        self._apply_thumbnail(label, pixmap)
+
+    @staticmethod
+    def _apply_thumbnail(label: QLabel, pixmap: QPixmap) -> None:
+        if pixmap.isNull():
+            label.setText("失败")
+            label.setStyleSheet(
+                "font-size: 11px; color: #ff7875; border: 1px solid rgba(255,120,117,0.3); "
+                "border-radius: 6px; background: rgba(255,255,255,0.1);"
+            )
+        else:
+            scaled = pixmap.scaled(80, 80, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+            label.setPixmap(scaled)
+            label.setStyleSheet("border: 1px solid rgba(255,255,255,0.2); border-radius: 6px;")
 
     @staticmethod
     def _open_viewer(url: str):
@@ -266,20 +303,3 @@ class ChatMessage(QWidget):
         if path.startswith("http"):
             return path
         return f"{BASE_URL}/{path.lstrip('/')}"
-
-
-def _apply_thumbnail(ref: weakref.ref, pixmap: QPixmap):
-    """安全设置缩略图（widget 已销毁则静默跳过）"""
-    label = ref()
-    if label is None:
-        return
-    if pixmap.isNull():
-        label.setText("失败")
-        label.setStyleSheet(
-            "font-size: 11px; color: #ff7875; border: 1px solid rgba(255,120,117,0.3); "
-            "border-radius: 6px; background: rgba(255,255,255,0.1);"
-        )
-        return
-    scaled = pixmap.scaled(80, 80, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
-    label.setPixmap(scaled)
-    label.setStyleSheet("border: 1px solid rgba(255,255,255,0.2); border-radius: 6px;")

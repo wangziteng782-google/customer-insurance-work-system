@@ -1,13 +1,319 @@
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>保险工单管理系统</title>
-  </head>
-  <body>
-    <div id="app"></div>
-    <script type="module" src="/src/main.ts"></script>
-  </body>
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>易梯保险系统</title>
+<link rel="stylesheet" href="css/style.css">
+<script>
+  if (!localStorage.getItem('token')) location.href = 'login.html';
+</script>
+</head>
+<body>
+<div class="app">
+
+  <aside class="sidebar">
+    <div class="brand">
+      <img class="brand-icon" src="images/logo.png" alt="Logo">
+      <div>
+        <div class="brand-text">易梯保险系统</div>
+      </div>
+    </div>
+    <div class="side-head"><span>保险公司</span><span class="side-right"><span class="side-count" id="companyCount">0 家</span><button class="refresh-btn" id="refreshBtn" title="刷新数据" onclick="refreshData()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button></span></div>
+
+    <div class="company-list">
+      <!-- 动态生成：由 renderSidebar() 根据任务数据渲染 -->
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="page-head">
+      <div>
+        <div class="breadcrumb">工单管理 / <span id="companyTitle2">平安保险</span></div>
+        <div class="title-row">
+          <h1 id="companyTitle">平安保险</h1>
+          <span class="meta-chip" id="userTotal">1 个用户</span>
+          <span class="meta-chip" id="recordTotal">1 条记录</span>
+        </div>
+      </div>
+      <div class="head-right-user">
+        <div class="user-info" id="userMenu">
+          <div class="user-avatar" id="headerAvatar">步</div>
+          <div class="user-meta">
+            <div class="user-name" id="headerName">小步</div>
+            <div class="user-role" id="headerRole">保险内勤</div>
+          </div>
+          <span class="user-status" title="在线"></span>
+          <svg class="user-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+          <div class="user-dropdown" id="userDropdown">
+            <div class="dropdown-item" onclick="openPasswordModal()">修改密码</div>
+            <div class="dropdown-item dropdown-danger" onclick="logout()">退出登录</div>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <div class="filter-bar">
+      <div class="filter-item">
+        <span class="filter-label">客服人员</span>
+        <div class="multi-select" id="userSelect">
+          <div class="multi-select-trigger" onclick="toggleMultiPanel()">
+            <span id="userSelectLabel">全部</span>
+          </div>
+          <div class="multi-select-panel" id="userSelectPanel"></div>
+        </div>
+      </div>
+      <div class="filter-item">
+        <span class="filter-label">做单类型</span>
+        <select class="filter-select" id="typeFilter" onchange="render()"><option value="">全部</option><option value="新投">新投</option><option value="批改">批改</option></select>
+      </div>
+      <div class="filter-item status-filter-item">
+        <span class="filter-label">状态</span>
+        <div class="status-checkboxes" id="statusFilter">
+          <label class="st-cb"><input type="checkbox" value="1" onchange="render()"><span class="st-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span><span class="st-dot s-processing"></span>进行中</label>
+          <label class="st-cb"><input type="checkbox" value="3" onchange="render()"><span class="st-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span><span class="st-dot s-done"></span>已做单</label>
+          <label class="st-cb"><input type="checkbox" value="4" onchange="render()"><span class="st-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span><span class="st-dot s-teal"></span>已递交</label>
+          <label class="st-cb"><input type="checkbox" value="5" onchange="render()"><span class="st-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span><span class="st-dot s-orange"></span>对公认款中</label>
+          <label class="st-cb"><input type="checkbox" value="6" onchange="render()"><span class="st-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span><span class="st-dot s-purple"></span>二维码</label>
+          <label class="st-cb"><input type="checkbox" value="9" onchange="render()"><span class="st-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span><span class="st-dot s-indigo"></span>待递交</label>
+          <label class="st-cb"><input type="checkbox" value="2" onchange="render()"><span class="st-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span><span class="st-dot s-error"></span>待确认</label>
+          <label class="st-cb"><input type="checkbox" value="7" onchange="render()"><span class="st-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span><span class="st-dot s-rejected"></span>待补充</label>
+          <label class="st-cb"><input type="checkbox" value="8" onchange="render()"><span class="st-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span><span class="st-dot s-muted"></span>已作废</label>
+        </div>
+      </div>
+      <div class="filter-item">
+        <span class="filter-label">关键字</span>
+        <input class="filter-input" placeholder="请输入关键字">
+      </div>
+      <div class="actions" style="margin-left:auto">
+        <button class="btn primary" onclick="toast('查询')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+          查询
+        </button>
+        <button class="btn" onclick="resetFilter()">重置</button>
+      </div>
+    </div>
+
+    <div class="list-head" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+      <div class="table-title">提单消息<span class="num" id="listCount">1</span></div>
+    </div>
+    <div id="taskTableWrap"></div>
+  </main>
+</div>
+
+<!-- 详情弹窗 -->
+<div class="modal-mask" id="modalMask">
+  <div class="modal">
+    <div class="modal-head">
+      <div>
+        <div class="modal-title">提单详情</div>
+        <div class="modal-sub" id="modalSub"></div>
+      </div>
+      <button class="close" onclick="closeModal()">×</button>
+    </div>
+
+    <div class="modal-body">
+      <section class="section">
+        <div class="section-head">
+          <div class="section-name">附件<span class="section-count" id="fileCount">0 个</span></div>
+          <span class="muted">点击可下载</span>
+        </div>
+        <div class="file-list" id="fileList"></div>
+      </section>
+    </div>
+
+    <div class="modal-foot">
+      <div class="foot-actions">
+        <button class="btn" onclick="closeModal()">关闭</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 修改密码弹窗 -->
+<div class="modal-mask" id="passwordMask" style="display:none">
+  <div class="modal" style="width:min(420px,94vw)">
+    <div class="modal-head">
+      <div>
+        <div class="modal-title">修改密码</div>
+        <div class="modal-sub">修改后需要重新登录</div>
+      </div>
+      <button class="close" onclick="closePasswordModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>当前密码</label>
+        <input type="password" id="oldPassword" placeholder="请输入当前密码">
+      </div>
+      <div class="form-group">
+        <label>新密码</label>
+        <input type="password" id="newPassword" placeholder="至少6位">
+      </div>
+      <div class="form-group">
+        <label>确认新密码</label>
+        <input type="password" id="confirmPassword" placeholder="再次输入新密码">
+      </div>
+      <div class="error-msg" id="passwordError"></div>
+    </div>
+    <div class="modal-foot">
+      <div class="foot-actions">
+        <button class="btn" onclick="closePasswordModal()">取消</button>
+        <button class="btn primary" onclick="submitPassword()">确认修改</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 修改状态弹窗 -->
+<div class="modal-mask" id="statusMask">
+  <div class="modal" style="width:min(550px,94vw)">
+    <div class="modal-head">
+      <div>
+        <div class="modal-title">修改状态</div>
+        <div class="modal-sub" id="statusSub"></div>
+      </div>
+      <button class="close" onclick="closeStatusModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <div style="margin-bottom:10px;font-size:var(--fs-sm);color:var(--gray-600)">请选择新状态</div>
+      <div class="status-section-label">流程状态</div>
+      <div class="status-grid">
+        <label class="status-card" data-val="1">
+          <input type="radio" name="st" value="1">
+          <span class="sc-dot s-processing"></span>
+          <div class="sc-text"><div class="sc-name">进行中</div><div class="sc-desc">客服提交</div></div>
+        </label>
+        <label class="status-card" data-val="3">
+          <input type="radio" name="st" value="3">
+          <span class="sc-dot s-done"></span>
+          <div class="sc-text"><div class="sc-name">已做单</div><div class="sc-desc">内勤做单</div></div>
+        </label>
+        <label class="status-card" data-val="4">
+          <input type="radio" name="st" value="4">
+          <span class="sc-dot s-teal"></span>
+          <div class="sc-text"><div class="sc-name">已递交</div><div class="sc-desc">内勤提交保司(完结)</div></div>
+        </label>
+        <label class="status-card" data-val="5">
+          <input type="radio" name="st" value="5">
+          <span class="sc-dot s-orange"></span>
+          <div class="sc-text"><div class="sc-name">对公认款中</div><div class="sc-desc">内勤提交保司(对公等认款)</div></div>
+        </label>
+        <label class="status-card" data-val="6">
+          <input type="radio" name="st" value="6">
+          <span class="sc-dot s-purple"></span>
+          <div class="sc-text"><div class="sc-name">二维码</div><div class="sc-desc">内勤提交保司(等二维码)</div></div>
+        </label>
+        <label class="status-card" data-val="9">
+          <input type="radio" name="st" value="9">
+          <span class="sc-dot s-indigo"></span>
+          <div class="sc-text"><div class="sc-name">待递交</div><div class="sc-desc">保司截单后递交的单子</div></div>
+        </label>
+      </div>
+      <div class="status-section-label">退回状态<span class="must-fill">需填写退回原因</span></div>
+      <div class="status-grid">
+        <label class="status-card" data-val="2">
+          <input type="radio" name="st" value="2">
+          <span class="sc-dot s-error"></span>
+          <div class="sc-text"><div class="sc-name">待确认</div><div class="sc-desc">客服提交做单资料不全，内勤退回</div></div>
+        </label>
+        <label class="status-card" data-val="7">
+          <input type="radio" name="st" value="7">
+          <span class="sc-dot s-rejected"></span>
+          <div class="sc-text"><div class="sc-name">待补充</div><div class="sc-desc">递交保司的资料少或未付款</div></div>
+        </label>
+      </div>
+      <div class="status-section-label">终止</div>
+      <div class="status-grid">
+        <label class="status-card" data-val="8">
+          <input type="radio" name="st" value="8">
+          <span class="sc-dot s-muted"></span>
+          <div class="sc-text"><div class="sc-name">已作废</div><div class="sc-desc">作废单</div></div>
+        </label>
+      </div>
+      <div id="rejectWrap" class="reject-wrap" style="display:none">
+        <div style="margin:14px 0 8px;font-size:var(--fs-sm);color:var(--gray-600)">退回原因<span style="color:#f5222d">（必填）</span></div>
+        <textarea id="rejectInput" class="cr-edit" style="min-height:90px" placeholder="请输入退回原因，将通知提交人修改后重新提交"></textarea>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <div class="foot-actions">
+        <button class="btn" onclick="closeStatusModal()">取消</button>
+        <button class="btn primary" onclick="confirmStatus()">确认修改</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- OCR识别弹窗 -->
+<div class="modal-mask" id="ocrMask">
+  <div class="modal" style="width:min(960px,94vw);height:min(720px,92vh)">
+    <div class="modal-head">
+      <div>
+        <div class="modal-title">OCR 身份证识别</div>
+        <div class="modal-sub" id="ocrSub"></div>
+      </div>
+      <button class="close" onclick="closeOcrModal()">×</button>
+    </div>
+    <div class="ocr-body">
+      <div class="ocr-left">
+        <div class="ocr-left-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+          身份证原图<span class="section-count" id="ocrImgCount"></span>
+        </div>
+        <div class="ocr-thumb-grid" id="ocrThumbList"></div>
+      </div>
+      <div class="ocr-right">
+        <div class="ocr-right-head">
+          <div class="ocr-left-title">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+            识别结果<span class="cr-tip" id="ocrEditTip">可编辑</span>
+          </div>
+          <button class="cr-copy" id="ocrVerifyBtn" onclick="ocrVerify()" style="display:none">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg>
+            身份证校验
+          </button>
+        </div>
+        <div id="ocrResultArea" style="flex:1;display:flex;flex-direction:column;gap:12px"></div>
+        <div id="ocrVerifyTip" style="display:none"></div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <div class="foot-actions">
+        <button class="btn" onclick="closeOcrModal()">关闭</button>
+        <button class="btn primary" id="ocrActionBtn" onclick="ocrStart()">开始识别</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 图片放大预览层 -->
+<div class="img-viewer" id="imgViewer">
+  <button class="img-viewer-rotate" title="旋转 90°" onclick="viewerRotate()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><polyline points="21 3 21 9 15 9"/></svg></button>
+  <a class="img-viewer-dl" id="imgViewerDl" download>下载</a>
+  <button class="img-viewer-close" onclick="closeImgViewer()">×</button>
+  <img id="imgViewerSrc" src="" alt="预览">
+  <span class="img-viewer-tag" id="imgViewerTag"></span>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="js/app.js"></script>
+<script>
+  // 填充登录用户信息
+  var u = JSON.parse(localStorage.getItem('currentUser') || '{}');
+  if (u.display_name) {
+    document.getElementById('headerAvatar').textContent = u.display_name.charAt(0);
+    document.getElementById('headerName').textContent = u.display_name;
+  }
+  var roleMap = {0: '管理员', 1: '客服', 2: '保险内勤'};
+  if (u.role != null) {
+    document.getElementById('headerRole').textContent = roleMap[u.role] || '用户';
+  }
+  function logout() {
+    localStorage.removeItem('currentUser');
+    localStorage.removeItem('token');
+    location.href = 'login.html';
+  }
+</script>
+</body>
 </html>
