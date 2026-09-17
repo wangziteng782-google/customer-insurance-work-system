@@ -1,6 +1,6 @@
 """左侧历史记录面板 - 保单卡片列表 + 分页"""
 from PySide6.QtWidgets import QVBoxLayout, QHBoxLayout, QLabel, QWidget, QSizePolicy
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from qfluentwidgets import PushButton, ScrollArea, SearchLineEdit
 
 from client.api import list_chat_tasks
@@ -59,16 +59,29 @@ class PolicyCardItem(QWidget):
         self.title_label.setAlignment(Qt.AlignTop)
         content_layout.addWidget(self.title_label)
 
-        # 状态徽标
-        status_badge = QLabel("进行中")
+        # 状态徽标（根据 status 动态显示）
+        STATUS_MAP = {
+            1: ("进行中", "#fa8c16", "#fff7e6"),
+            2: ("待确认", "#1677ff", "#e8f4ff"),
+            3: ("已做单", "#52c41a", "#f6ffed"),
+            4: ("已递交", "#13c2c2", "#e6fffb"),
+            5: ("对公认款", "#722ed1", "#f9f0ff"),
+            6: ("二维码", "#eb2f96", "#fff0f6"),
+            7: ("待补充", "#fa541c", "#fff2e8"),
+            8: ("已作废", "#8c8c8c", "#f5f5f5"),
+            9: ("待递交", "#1677ff", "#e8f4ff"),
+        }
+        status = self._task.get("status", 1)
+        label, fg, bg = STATUS_MAP.get(status, ("未知", "#8c8c8c", "#f5f5f5"))
+        status_badge = QLabel(label)
         status_badge.setAlignment(Qt.AlignCenter)
         status_badge.setFixedHeight(20)
         status_badge.setMinimumWidth(48)
         status_badge.setStyleSheet(f"""
             font-size: 11px;
             font-weight: 600;
-            color: #fa8c16;
-            background-color: #fff7e6;
+            color: {fg};
+            background-color: {bg};
             border-radius: 4px;
             padding: 0 6px;
         """)
@@ -133,6 +146,10 @@ class HistoryPanel(QWidget):
         self._total_count: int = 0
         self._init_ui()
         self._load_history()
+        # 自动轮询同步前端状态变更
+        self._poll_timer = QTimer(self)
+        self._poll_timer.timeout.connect(self.refresh)
+        self._poll_timer.start(15000)
 
     def _init_ui(self) -> None:
         self.setFixedWidth(260)

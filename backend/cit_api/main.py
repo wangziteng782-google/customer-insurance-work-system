@@ -8,11 +8,10 @@ from fastapi.responses import JSONResponse
 
 from cit_api.database import engine
 from cit_api.model.model import Base, ChatMessage  # noqa: F401  -- 确保模型被注册
-from cit_api.router.new_policy_router import router as new_policy_router
-from cit_api.router.endorsement_router import router as endorsement_router
 from cit_api.router.ai_router import router as ai_router
 from cit_api.router.message_router import router as message_router
 from cit_api.router.user_router import router as user_router
+from cit_api.router.ocr_router import router as ocr_router
 
 # 启动时建表（开发期使用，生产建议用 Alembic 迁移）
 Base.metadata.create_all(bind=engine)
@@ -36,11 +35,10 @@ app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 STATIC_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "frontend")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
-app.include_router(new_policy_router)
-app.include_router(endorsement_router)
 app.include_router(ai_router)
 app.include_router(message_router)
 app.include_router(user_router)
+app.include_router(ocr_router)
 
 
 @app.exception_handler(RequestValidationError)

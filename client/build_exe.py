@@ -42,6 +42,7 @@ cmd = [
     "--include-module=client.ui.chat_panel",
     "--include-module=client.ui.dialog",
     "--include-module=client.ui.widgets.chat_message",
+    "--include-module=client.ui.change_password_dialog",
     "--include-module=client.resources",
     os.path.join(CLIENT_DIR, "main.py"),
 ]

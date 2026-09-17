@@ -38,7 +38,9 @@ const RETURNED_STATUSES = [2, 7];
 
 // ── 数据 ──
 let allTasks = [];
+let allAllTasks = [];
 let allUsers = [];
+let allCompanies = [];
 let currentCompany = "全部";
 let selected = [];
 let renderedTasks = [];
@@ -52,16 +54,29 @@ const ICONS = {
 
 // ── API 对接 ──
 
-async function loadTasks() {
+async function loadCompanies() {
+  try {
+    const resp = await authFetch('/api/chat/companies');
+    if (!resp.ok) return;
+    allCompanies = await resp.json();
+  } catch {}
+}
+
+async function loadTasks(company) {
   const resp = await authFetch('/api/chat/tasks?limit=1000');
   if (!resp.ok) throw new Error('加载任务失败');
   const raw = await resp.json();
-  allTasks = await Promise.all(raw.map(async t => {
-    const comments = RETURNED_STATUSES.includes(t.status) ? await loadComments(t.task_id) : [];
-    const messages = await loadMessages(t.task_id);
+  const normalized = await Promise.all(raw.map(async t => {
+    const messages = t.messages || [];
+    const comments = t.comments || [];
     const images = countImagesFromMessages(messages);
     return normalizeTask(t, comments, images, messages);
   }));
+  allAllTasks = normalized;
+  allTasks = (company && company !== '全部')
+    ? normalized.filter(t => t._insuranceCompany === company)
+    : normalized;
+  await loadCompanies();
 }
 
 async function loadUsers() {
@@ -71,22 +86,6 @@ async function loadUsers() {
     const users = await resp.json();
     allUsers = users.filter(u => u.role === 1).map(u => u.display_name);
   } catch {}
-}
-
-async function loadComments(taskId) {
-  try {
-    const resp = await authFetch(`/api/chat/tasks/${taskId}/comments`);
-    if (!resp.ok) return [];
-    return await resp.json();
-  } catch { return []; }
-}
-
-async function loadMessages(taskId) {
-  try {
-    const resp = await authFetch(`/api/chat/messages?task_id=${taskId}`);
-    if (!resp.ok) return [];
-    return await resp.json();
-  } catch { return []; }
 }
 
 function countImagesFromMessages(messages) {
@@ -110,6 +109,7 @@ function normalizeTask(t, comments, images, messages) {
     company: t.customer_company || t.insurance_company || "未知",
     user: t.creator || "未知",
     time: t.created_at ? String(t.created_at).replace('T', ' ').slice(0, 19) : "",
+    updated_at: t.updated_at || t.created_at || "",
     type: TYPE_LABELS[t.business_type] || "新投",
     status: t.status,
     rejectReason: rejectReason,
@@ -146,36 +146,50 @@ function getCompanyGroups() {
 
 // ── 侧栏渲染 ──
 
-function renderSidebar() {
-  const companies = {};
-  allTasks.forEach(t => {
-    const name = t._insuranceCompany || '未知';
-    if (!companies[name]) companies[name] = { count: 0, users: new Set() };
-    companies[name].count++;
-    if (t.user) companies[name].users.add(t.user);
-  });
+// ── 未读标记（localStorage + updated_at）──
+function isUnread(task) {
+  if (!task.updated_at) return false;
+  const seen = localStorage.getItem('seen_' + task.id);
+  return !seen || task.updated_at > seen;
+}
 
-  // 更新保险公司数量
+function markSeen(task) {
+  if (task.updated_at) localStorage.setItem('seen_' + task.id, task.updated_at);
+}
+
+function markTaskSeen(i) {
+  const t = renderedTasks[i];
+  if (t) { markSeen(t); render(); }
+}
+
+function companyHasUnread(company) {
+  return allAllTasks.some(t => (t._insuranceCompany || t.insurance_company) === company && isUnread(t));
+}
+
+function hasNewImages(task) {
+  return isUnread(task) && (task.messages || []).some(m => (m.file_paths || []).length > 0);
+}
+
+function renderSidebar() {
   const countEl = document.getElementById('companyCount');
-  if (countEl) countEl.textContent = Object.keys(companies).length + ' 家';
+  if (countEl) countEl.textContent = allCompanies.length + ' 家';
 
   const wrap = document.querySelector('.company-list');
   if (!wrap) return;
 
   let html = '';
-  // "全部" 按钮
-  const totalCount = allTasks.length;
-  const totalUsers = [...new Set(allTasks.map(t => t.user).filter(Boolean))];
+  const totalCount = allCompanies.reduce((s, c) => s + c.count, 0);
+  const totalUsers = [...new Set(allCompanies.flatMap(c => c.users || []))];
   html += `<button class="company${currentCompany === '全部' ? ' active' : ''}" data-company="全部" onclick="selectCompany('全部',this)">
     <div class="company-left"><span class="company-name">全部</span><span class="company-meta">${totalCount} 条 · ${totalUsers.join('、')}</span></div>
     <span class="badge">${totalCount}</span>
   </button>`;
 
-  // 各保险公司按钮
-  Object.entries(companies).forEach(([name, info]) => {
-    html += `<button class="company${currentCompany === name ? ' active' : ''}" data-company="${name}" onclick="selectCompany('${name}',this)">
-      <div class="company-left"><span class="company-name">${name}</span><span class="company-meta">${info.count} 条 · ${[...info.users].join('、')}</span></div>
-      <span class="badge">${info.count}</span>
+  allCompanies.forEach(c => {
+    const dot = companyHasUnread(c.name) ? '<i style="width:7px;height:7px;border-radius:50%;background:#f5222d;display:inline-block;margin-left:4px;vertical-align:middle;"></i>' : '';
+    html += `<button class="company${currentCompany === c.name ? ' active' : ''}" data-company="${c.name}" onclick="selectCompany('${c.name}',this)">
+      <div class="company-left"><span class="company-name">${c.name}</span><span class="company-meta">${c.count} 条 · ${(c.users || []).join('、')}</span></div>
+      <span class="badge">${c.count}</span>${dot}
     </button>`;
   });
 
@@ -233,7 +247,6 @@ function render() {
 
   renderedTasks = tasks;
   const items = tasks.map((t, i) => {
-    const uClass = t.user === '小步' ? 'u-xb' : t.user === '小陈' ? 'u-xc' : 'u-other';
     const stCls = STATUS_CSS[t.status] || "tag-processing";
     const stLabel = STATUS_LABELS[t.status] || "未知";
     const isReturned = RETURNED_STATUSES.includes(t.status);
@@ -247,6 +260,9 @@ function render() {
               <span class="type-tag ${t.type === '批改' ? 'type-end' : 'type-new'}">${t.type || '新投'}</span>
             </div>
             <div class="head-row2">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              <span class="creator">${t.user}</span>
+              <span class="dot-sep">·</span>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
               ${t.time}
             </div>
@@ -261,13 +277,26 @@ function render() {
           <button class="detail-btn" onclick="openModal(${i})">查看详情 →</button>
         </div>
       </div>
-      <div class="msg-block">
+      <div class="msg-block" onclick="markTaskSeen(${i})">
         ${(() => {
           const msgs = (t.messages || []).slice().sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
           if (!msgs.length) return '<div class="msg-line"><span class="dot"></span><span class="t"></span><span class="c">共 0 条消息</span></div>';
+          const seen = localStorage.getItem('seen_' + t.id);
           return msgs.map(m => {
             const time = m.created_at ? String(m.created_at).replace('T', ' ').slice(0, 19) : '';
-            return `<div class="msg-line"><span class="dot"></span><span class="t">${time}</span><span class="c">${m.content || '(无内容)'}</span></div>`;
+            const imgs = (m.file_paths || []).filter(u => IMAGE_EXTS.includes('.' + u.split('.').pop().toLowerCase()));
+            const docs = (m.file_paths || []).filter(u => !IMAGE_EXTS.includes('.' + u.split('.').pop().toLowerCase()));
+            let c = m.content || '';
+            if (!c) {
+              const parts = [];
+              if (imgs.length) parts.push(`上传了 ${imgs.length} 张图片`);
+              if (docs.length) parts.push(`上传了 ${docs.length} 个附件`);
+              c = parts.join('，');
+            }
+            if (!c) return '';
+            const isNew = seen && m.created_at > seen;
+            const newDot = isNew ? '<span class="unread-dot msg"></span>' : '';
+            return `<div class="msg-line"><span class="dot"></span><span class="t">${time}</span><span class="c">${c}</span>${newDot}</div>`;
           }).join('');
         })()}
       </div>
@@ -287,12 +316,17 @@ function render() {
 
 // ── 事件处理 ──
 
-function selectCompany(name, el) {
+async function selectCompany(name, el) {
   currentCompany = name;
   selected = [];
   document.querySelectorAll(".company").forEach(x => x.classList.remove("active"));
   el.classList.add("active");
-  render();
+  try {
+    await loadTasks(name);
+    render();
+  } catch (e) {
+    toast("加载失败：" + e.message);
+  }
 }
 
 function toggleMultiPanel() {
@@ -336,9 +370,12 @@ document.addEventListener("click", function (e) {
 
 // ── 详情弹窗 ──
 
+let currentModalTask = null;
+
 async function openModal(i) {
   const task = renderedTasks[i];
   if (!task) return;
+  currentModalTask = task;
   document.getElementById("modalSub").textContent = (task.company || task.user) + " · " + (task.type || "新投");
   const fileList = document.getElementById("fileList");
   fileList.innerHTML = `<div style="text-align:center;padding:24px;color:var(--gray-400);font-size:var(--fs-sm)">加载中...</div>`;
@@ -383,7 +420,10 @@ async function openModal(i) {
   }
 }
 
-function closeModal() { document.getElementById("modalMask").classList.remove("show"); }
+function closeModal() {
+  currentModalTask = null;
+  document.getElementById("modalMask").classList.remove("show");
+}
 
 // ── 状态修改弹窗 ──
 
@@ -460,10 +500,22 @@ function runCardOCR(i) {
   const imgUrls = (t.messages || []).flatMap(m => m.file_paths || [])
     .filter(url => IMAGE_EXTS.includes('.' + url.split('.').pop().toLowerCase()));
   document.getElementById("ocrSub").textContent = (t.company || t.user) + " · " + (t.type || "新投");
-  document.getElementById("ocrImgCount").textContent = imgUrls.length + " 张";
-  document.getElementById("ocrThumbList").innerHTML = imgUrls.length ? imgUrls.map((url, k) => {
-    return `<div class="ocr-thumb${k === 0 ? " active" : ""}" id="ocrThumb-${k}" onclick="ocrSelect(${k});openImgViewer('${url}','图片 ${k+1}')" title="点击查看大图">
-      <img src="${url}" alt="图片 ${k+1}" onerror="this.style.display='none'">
+  const newImgMarker = hasNewImages(t) ? "新" : "";
+  document.getElementById("ocrImgCount").textContent = imgUrls.length + " 张" + (newImgMarker ? " · " + newImgMarker + "图片" : "");
+  const seen = localStorage.getItem('seen_' + t.id);
+  const imgWithTime = [];
+  (t.messages || []).forEach(m => {
+    (m.file_paths || []).forEach(url => {
+      if (IMAGE_EXTS.includes('.' + url.split('.').pop().toLowerCase())) {
+        imgWithTime.push({ url, created_at: m.created_at });
+      }
+    });
+  });
+  document.getElementById("ocrThumbList").innerHTML = imgWithTime.length ? imgWithTime.map((item, k) => {
+    const isNew = !seen || item.created_at > seen;
+    const imgNew = isNew ? '<span class="unread-dot ocr"></span>' : '';
+    return `<div class="ocr-thumb${k === 0 ? " active" : ""}" id="ocrThumb-${k}" onclick="ocrSelect(${k});openImgViewer('${item.url}','图片 ${k+1}')" title="点击查看大图">
+      ${imgNew}<img src="${item.url}" alt="图片 ${k+1}" onerror="this.style.display='none'">
       <div class="ocr-thumb-label">图片 ${k+1}</div>
     </div>`;
   }).join("") : '<div style="color:#999;padding:20px;">该任务暂无图片</div>';
@@ -479,7 +531,10 @@ function runCardOCR(i) {
   document.getElementById("ocrMask").classList.add("show");
 }
 
-function closeOcrModal() { document.getElementById("ocrMask").classList.remove("show"); }
+function closeOcrModal() {
+  if (ocrTaskIdx >= 0 && renderedTasks[ocrTaskIdx]) markSeen(renderedTasks[ocrTaskIdx]);
+  document.getElementById("ocrMask").classList.remove("show");
+}
 
 let viewerRot = 0;
 function openImgViewer(src, tag) {
@@ -506,35 +561,53 @@ function ocrSelect(k) {
 
 function ocrStart() {
   const t = renderedTasks[ocrTaskIdx];
-  const total = t ? t.images || 0 : 0;
+  if (!t) return;
+  const imgUrls = (t.messages || []).flatMap(m => m.file_paths || [])
+    .filter(url => IMAGE_EXTS.includes('.' + url.split('.').pop().toLowerCase()));
+  if (!imgUrls.length) {
+    toast("该任务暂无图片");
+    return;
+  }
   const btn = document.getElementById("ocrActionBtn");
   btn.disabled = true;
   btn.textContent = "识别中...";
   document.getElementById("ocrResultArea").innerHTML = `
-    <div class="ocr-loading"><span class="spinner"></span>正在识别 ${total} 张身份证，请稍候...</div>`;
-  setTimeout(() => {
-    btn.disabled = false;
-    btn.textContent = "重新识别";
-    btn.onclick = ocrStart;
-    document.getElementById("ocrVerifyBtn").style.display = "inline-flex";
-    ocrFillResult();
-    toast("OCR 识别完成");
-  }, 900);
+    <div class="ocr-loading"><span class="spinner"></span>正在识别 ${imgUrls.length} 张身份证，请稍候...</div>`;
+  authFetch('/api/ocr/recognize', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ image_urls: imgUrls }),
+  })
+    .then(r => {
+      if (!r.ok) return r.json().then(e => { throw new Error(e.detail || '识别失败'); });
+      return r.json();
+    })
+    .then(data => {
+      ocrResults = data.results || [];
+      ocrErrors = data.errors || [];
+      btn.disabled = false;
+      btn.textContent = "重新识别";
+      btn.onclick = ocrStart;
+      document.getElementById("ocrVerifyBtn").style.display = "inline-flex";
+      ocrFillResult();
+      toast("OCR 识别完成");
+    })
+    .catch(e => {
+      btn.disabled = false;
+      btn.textContent = "开始识别";
+      document.getElementById("ocrResultArea").innerHTML = `
+        <div class="ocr-loading" style="color:#f5222d">识别失败：${e.message}</div>`;
+      toast("识别失败：" + e.message);
+    });
 }
 
-const ocrFakeData = [
-  { name: "张伟", id: "440301198907123456" },
-  { name: "李娜", id: "440302199203254521" },
-  { name: "王强", id: "440303198511087633" },
-  { name: "刘敏", id: "440304199410192248" }
-];
+let ocrResults = [];
+let ocrErrors = [];
 
 function ocrFillResult() {
-  const t = renderedTasks[ocrTaskIdx];
-  const total = t ? t.images || 0 : 0;
-  const lines = Array.from({ length: total }, (_, k) => {
-    const r = ocrFakeData[k % 4];
-    return r.name + " " + r.id;
+  const lines = ocrResults.map((r, i) => {
+    if (!r) return `（第 ${i + 1} 张识别失败）`;
+    return (r.name || "未知") + " " + r.id_number;
   });
   document.getElementById("ocrResultArea").innerHTML = `
     <textarea class="cr-edit ocr-summary" id="ocrSummary" placeholder="识别结果为空，可手动输入或粘贴">${lines.join("\n")}</textarea>`;
@@ -542,25 +615,62 @@ function ocrFillResult() {
 }
 
 function ocrVerify() {
-  const ta = document.getElementById("ocrSummary");
-  const text = ta ? ta.value : "";
   const tip = document.getElementById("ocrVerifyTip");
   tip.style.display = "block";
-  const lines = text.split("\n").map(l => l.trim()).filter(l => l);
-  if (!lines.length) {
-    tip.innerHTML = `<div class="cr-verify fail">识别结果为空</div>`;
-    toast("校验失败：识别结果为空");
-    return;
-  }
-  const bad = lines.filter(l => !/^\S+\s+\d{17}[\dXx]$/.test(l));
-  if (bad.length) {
-    tip.innerHTML = `<div class="cr-verify fail">${bad.length} 条记录格式不正确</div>`;
-    toast("校验失败：存在格式不正确的记录");
-  } else {
-    tip.innerHTML = `<div class="cr-verify">共 ${lines.length} 条记录，校验通过</div>`;
-    toast("身份证校验通过");
-  }
+  const ta = document.getElementById("ocrSummary");
+  if (!ta) { tip.innerHTML = '<div class="cr-verify fail">请先进行 OCR 识别</div>'; return; }
+  const lines = ta.value.split('\n').map(l => l.trim()).filter(Boolean);
+  if (!lines.length) { tip.innerHTML = '<div class="cr-verify fail">识别结果为空</div>'; return; }
+  tip.innerHTML = '<div class="ocr-loading"><span class="spinner"></span>正在校验...</div>';
+  const reqs = lines.map(line => {
+    const parts = line.split(/\s+/);
+    const id_number = parts.find(p => /\d{17}[\dXx]/.test(p)) || '';
+    const name = id_number ? line.replace(id_number, '').trim() : '';
+    return authFetch('/api/ocr/verify', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, id_number }),
+    }).then(r => r.ok ? r.json() : { errors: ['请求失败'], is_valid: false });
+  });
+  Promise.all(reqs).then(results => {
+    const pass = results.filter(r => r.is_valid).length;
+    const fail = results.length - pass;
+    tip.innerHTML = verifyTable(results) +
+      '<div class="verify-summary">校验完成：<span class="vs-ok">' + pass + ' 通过</span>，<span class="vs-fail">' + fail + ' 失败</span></div>';
+    toast('校验完成：' + pass + ' 通过，' + fail + ' 失败');
+  }).catch(e => { tip.innerHTML = '<div class="cr-verify fail">校验失败：' + e.message + '</div>'; });
 }
+
+function verifyTable(results) {
+  let h = '<table class="verify-table"><thead><tr>' +
+    '<th>#</th><th>姓名</th><th>证件号</th><th>类型</th><th>地区</th>' +
+    '<th>出生日期</th><th>性别</th><th>年龄</th><th>状态</th><th>提示</th>' +
+    '</tr></thead><tbody>';
+  results.forEach((r, i) => {
+    const st = r.is_valid ? '<span class="v-pass">✓ 通过</span>' : '<span class="v-fail">✗ 失败</span>';
+    let note = '-';
+    if (!r.is_valid && r.correct_check_code) {
+      note = '校验码应为 <strong>' + r.correct_check_code + '</strong>';
+      if (r.errors && r.errors.length) note += '<br>' + r.errors.map(e => esc(e)).join('<br>');
+    } else if (r.errors && r.errors.length) {
+      note = r.errors.map(e => esc(e)).join('<br>');
+    } else if (r.warnings && r.warnings.length) {
+      note = '<span class="v-warn">' + r.warnings.map(w => esc(w)).join('；') + '</span>';
+    }
+    h += '<tr><td>' + (i + 1) + '</td>' +
+      '<td>' + esc(r.name) + '</td>' +
+      '<td>' + esc(r.id_card) + '</td>' +
+      '<td>' + esc(r.id_type) + '</td>' +
+      '<td>' + esc(r.area) + '</td>' +
+      '<td>' + esc(r.birth_date) + '</td>' +
+      '<td>' + esc(r.gender) + '</td>' +
+      '<td>' + (r.age != null ? r.age + '岁' : '-') + '</td>' +
+      '<td>' + st + '</td>' +
+      '<td>' + note + '</td></tr>';
+  });
+  return h + '</tbody></table>';
+}
+
+function esc(s) { return s ? String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') : '-'; }
 
 // ── Toast ──
 
@@ -654,12 +764,21 @@ async function submitPassword() {
 
 async function init() {
   try {
+    await loadCompanies();
     await loadUsers();
     await loadTasks();
     render();
   } catch (e) {
     toast("加载失败：" + e.message);
   }
+  // 自动刷新（30秒）— 用于检测 PySide 新增的消息/图片
+  setInterval(async () => {
+    try {
+      await loadCompanies();
+      await loadTasks();
+      render();
+    } catch {}
+  }, 15000);
 }
 
 init();

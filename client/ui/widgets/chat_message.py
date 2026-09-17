@@ -178,8 +178,12 @@ class ChatMessage(QWidget):
                 layout.addLayout(file_row)
 
         bubble.setStyleSheet(self._bubble_style())
-        outer.addStretch()
-        outer.addWidget(bubble)
+        if self._is_handler:
+            outer.addWidget(bubble)
+            outer.addStretch()
+        else:
+            outer.addStretch()
+            outer.addWidget(bubble)
 
     def _bubble_style(self) -> str:
         """气泡样式：用户蓝色 / 内勤灰色"""

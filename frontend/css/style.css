@@ -16,7 +16,7 @@ body{margin:0;background:var(--bg);color:var(--gray-800);font-family:-apple-syst
 *::-webkit-scrollbar-thumb:hover{background:#bfbfbf}
 button{font-family:inherit;cursor:pointer}
 input,select,textarea{font-family:inherit}
-.app{height:100vh;display:grid;grid-template-columns:240px minmax(0,1fr);overflow:hidden}
+.app{height:100vh;display:grid;grid-template-columns:250px minmax(0,1fr);overflow:hidden}
 
 /* ========== 左侧导航 ========== */
 .sidebar{background:var(--card);border-right:1px solid var(--line);display:flex;flex-direction:column}
@@ -41,7 +41,7 @@ input,select,textarea{font-family:inherit}
 .refresh-btn.spinning svg{animation:spin .6s ease}
 @keyframes spin{to{transform:rotate(360deg)}}
 .company-list{display:flex;flex-direction:column;padding:0 10px 10px;gap:2px;flex:1;overflow:auto}
-.company{border:0;background:transparent;border-radius:var(--r-sm);text-align:left;padding:13px 14px;cursor:pointer;color:var(--gray-700);display:flex;justify-content:space-between;align-items:center;transition:background .15s}
+.company{border:0;background:transparent;border-radius:var(--r-sm);text-align:left;padding:13px 14px;cursor:pointer;color:var(--gray-700);display:flex;justify-content:space-between;align-items:center;transition:background .15s;position:relative}
 .company:hover{background:var(--gray-50)}
 .company.active{background:var(--blue-50);color:var(--blue-600);font-weight:600;box-shadow:inset 3px 0 0 var(--blue)}
 .company.active .company-meta{color:var(--blue-400)}
@@ -124,6 +124,8 @@ h1{font-size:var(--fs-xl);margin:0;font-weight:600;color:var(--gray-900)}
 .head-row1 .name{font-size:var(--fs-md);font-weight:600;color:var(--gray-900)}
 .head-row2{display:flex;align-items:center;gap:4px;color:var(--gray-500);font-size:var(--fs-sm)}
 .head-row2 svg{width:13px;height:13px;color:var(--gray-400)}
+.head-row2 .creator{color:var(--gray-600);font-weight:500}
+.head-row2 .dot-sep{color:var(--gray-300);margin:0 2px}
 .head-right{display:flex;align-items:center;gap:10px}
 
 .msg-block{background:linear-gradient(180deg,#fafbfc,#f5f7fa);border:1px solid var(--gray-200);border-radius:var(--r-sm);padding:12px 14px;margin-bottom:10px;display:flex;flex-direction:column;gap:8px;position:relative}
@@ -151,6 +153,23 @@ h1{font-size:var(--fs-xl);margin:0;font-weight:600;color:var(--gray-900)}
 .cr-verify{margin-top:10px;display:flex;align-items:flex-start;gap:6px;padding:10px 14px;background:#f6ffed;border:1px solid #b7eb8f;border-radius:var(--r-sm);font-size:var(--fs-sm);color:#389e0d;line-height:1.6}
 .cr-verify.fail{background:#fff2f0;border-color:#ffccc7;color:#cf1322}
 .cr-verify svg{width:14px;height:14px;flex-shrink:0;margin-top:2px}
+.ocr-modal{width:min(1100px,95vw);height:min(720px,92vh);max-height:90vh;background:#fff;border-radius:var(--r-md);box-shadow:var(--shadow-lg);display:flex;flex-direction:column;overflow:hidden}
+.verify-table{width:100%;border-collapse:collapse;font-size:var(--fs-sm);table-layout:auto}
+.verify-table th,.verify-table td{padding:8px 10px;text-align:left;border-bottom:1px solid var(--gray-200);white-space:nowrap}
+.verify-table th{background:var(--gray-50);font-weight:600;color:var(--gray-600);position:sticky;top:0}
+.verify-table tr:hover{background:var(--gray-50)}
+.v-pass{color:#389e0d;font-weight:600}
+.v-fail{color:#cf1322;font-weight:600}
+.v-warn{color:#d48806}
+.unread-dot{position:absolute;border-radius:50%;background:#f5222d;border:2px solid #fff;z-index:3}
+.unread-dot.company{width:7px;height:7px;margin-left:4px;display:inline-block;vertical-align:middle;position:static;border:none}
+.unread-dot.ocr{width:8px;height:8px;top:4px;right:4px}
+.unread-dot.msg{width:7px;height:7px;flex-shrink:0;margin-top:6px;position:static;border:none}
+.msg-new-wrap{display:flex;align-items:center;gap:6px;margin-bottom:4px}
+.msg-new-badge{font-size:10px;color:#fff;background:#f5222d;border-radius:8px;padding:1px 6px;font-weight:600;flex-shrink:0}
+.verify-summary{margin-top:10px;padding:10px 14px;background:var(--gray-50);border-radius:var(--r-sm);font-size:var(--fs-sm);text-align:center}
+.vs-ok{color:#389e0d;font-weight:600}
+.vs-fail{color:#cf1322;font-weight:600}
 .cr-copy{display:inline-flex;align-items:center;gap:6px;height:36px;padding:0 18px;border:1px solid var(--gray-300);background:#fff;border-radius:var(--r-sm);color:var(--gray-700);font-size:var(--fs-md);font-weight:500;cursor:pointer;transition:all .15s}
 .cr-copy:hover{color:var(--blue);border-color:var(--blue)}
 .cr-copy svg{width:15px;height:15px}

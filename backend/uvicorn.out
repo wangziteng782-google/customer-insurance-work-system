@@ -1,6 +1,3 @@
 [422 DEBUG] POST /api/users/login
-[422 DEBUG] body=<stream consumed>
-[422 DEBUG] errors=[{'type': 'missing', 'loc': ('body', 'phone'), 'msg': 'Field required', 'input': None}, {'type': 'missing', 'loc': ('body', 'password'), 'msg': 'Field required', 'input': None}]
-[422 DEBUG] POST /api/users/login
-[422 DEBUG] body=<stream consumed>
+[422 DEBUG] body=
 [422 DEBUG] errors=[{'type': 'missing', 'loc': ('body', 'phone'), 'msg': 'Field required', 'input': None}, {'type': 'missing', 'loc': ('body', 'password'), 'msg': 'Field required', 'input': None}]

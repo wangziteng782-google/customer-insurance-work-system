@@ -57,6 +57,8 @@ class ChatTaskOutDTO(BaseModel):
     msg_count: int = 0
     created_at: datetime
     updated_at: datetime
+    messages: list[ChatMessageOutDTO] = []
+    comments: list[TaskCommentDTO] = []
 
 class StatusUpdateDTO(BaseModel):
     """修改状态入参"""

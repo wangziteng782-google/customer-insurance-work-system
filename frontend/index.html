@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>易梯保险系统</title>
-<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/style.css?v=2">
 <script>
   if (!localStorage.getItem('token')) location.href = 'login.html';
 </script>
@@ -246,7 +246,7 @@
 
 <!-- OCR识别弹窗 -->
 <div class="modal-mask" id="ocrMask">
-  <div class="modal" style="width:min(960px,94vw);height:min(720px,92vh)">
+  <div class="ocr-modal">
     <div class="modal-head">
       <div>
         <div class="modal-title">OCR 身份证识别</div>

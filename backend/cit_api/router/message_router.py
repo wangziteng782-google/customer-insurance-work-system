@@ -30,10 +30,19 @@ def list_messages(task_id: str, db: Session = Depends(get_db)):
     return ChatMessageService(db).list_by_task(task_id)
 
 
+@router.get("/companies")
+def list_companies(db: Session = Depends(get_db)):
+    """获取保险公司列表（侧栏用）"""
+    return ChatMessageService(db).list_companies()
+
+
 @router.get("/tasks", response_model=list[ChatTaskOutDTO])
-def list_tasks(skip: int = 0, limit: int = 50, db: Session = Depends(get_db)):
-    """获取任务列表（左侧面板）"""
-    return ChatMessageService(db).list_tasks(skip, limit)
+def list_tasks(company: str = None, skip: int = 0, limit: int = 50, db: Session = Depends(get_db)):
+    """获取任务列表，可按保险公司筛选"""
+    svc = ChatMessageService(db)
+    if company:
+        return svc.list_tasks_by_company(company, skip, limit)
+    return svc.list_tasks(skip, limit)
 
 
 @router.post("/upload")

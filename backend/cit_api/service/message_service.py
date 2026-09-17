@@ -51,18 +51,44 @@ class ChatMessageService:
         result = []
         for m in messages:
             dto = ChatMessageOutDTO.model_validate(m)
-            dto.creator_name = name_map.get(m.user_id) if m.user_id else m.creator
+            dto.creator_name = name_map.get(m.user_id) or m.creator
             result.append(dto)
         return result
 
     def list_tasks(self, skip: int = 0, limit: int = 50) -> list[ChatTaskOutDTO]:
         tasks = self.dao.list_tasks(self.db, skip, limit)
+        task_ids = [t['task_id'] for t in tasks]
+        msg_map = self.dao.list_messages_batch(self.db, task_ids)
+        comment_map = self.dao.list_comments_batch(self.db, task_ids)
         user_ids = list({t['user_id'] for t in tasks if t.get('user_id')})
         name_map = self._get_user_names(user_ids)
         result = []
         for t in tasks:
             dto = ChatTaskOutDTO(**t)
-            dto.creator_name = name_map.get(t.get('user_id')) if t.get('user_id') else t.get('creator')
+            dto.creator_name = name_map.get(t.get('user_id')) or t.get('creator')
+            dto.messages = [ChatMessageOutDTO.model_validate(m) for m in msg_map.get(t['task_id'], [])]
+            dto.comments = [TaskCommentDTO.model_validate(c) for c in comment_map.get(t['task_id'], [])]
+            result.append(dto)
+        return result
+
+    def list_companies(self) -> list[dict]:
+        """获取保险公司列表（侧栏用）"""
+        return self.dao.list_companies(self.db)
+
+    def list_tasks_by_company(self, company: str, skip: int = 0, limit: int = 50) -> list[ChatTaskOutDTO]:
+        """按保险公司获取任务列表（含嵌入的 messages 和 comments）"""
+        tasks = self.dao.list_tasks_by_company(self.db, company, skip, limit)
+        task_ids = [t['task_id'] for t in tasks]
+        msg_map = self.dao.list_messages_batch(self.db, task_ids)
+        comment_map = self.dao.list_comments_batch(self.db, task_ids)
+        user_ids = list({t['user_id'] for t in tasks if t.get('user_id')})
+        name_map = self._get_user_names(user_ids)
+        result = []
+        for t in tasks:
+            dto = ChatTaskOutDTO(**t)
+            dto.creator_name = name_map.get(t.get('user_id')) or t.get('creator')
+            dto.messages = [ChatMessageOutDTO.model_validate(m) for m in msg_map.get(t['task_id'], [])]
+            dto.comments = [TaskCommentDTO.model_validate(c) for c in comment_map.get(t['task_id'], [])]
             result.append(dto)
         return result
 

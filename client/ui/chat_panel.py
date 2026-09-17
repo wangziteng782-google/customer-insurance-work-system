@@ -251,9 +251,13 @@ class ChatPanel(QWidget):
         self._insurance_company: str = ""
         self._policy_type: int = 1
         self._customer_company: str = ""
+        self._current_user: dict | None = None
         self._history_gen: int = 0          # 用于丢弃旧请求结果
         self._loading_label: QLabel | None = None
         self._init_ui()
+
+    def set_current_user(self, user: dict):
+        self._current_user = user
 
     def _init_ui(self) -> None:
         self.setStyleSheet("background-color: #ffffff;")
@@ -528,7 +532,8 @@ class ChatPanel(QWidget):
                     task_id=self._current_task_id,
                     content=text,
                     file_paths=file_paths if file_paths else None,
-                    user_id=2,
+                    user_id=self._current_user.get("id") if self._current_user else None,
+                    creator=self._current_user.get("display_name") if self._current_user else None,
                     insurance_company=self._insurance_company,
                     business_type=self._policy_type,
                     customer_company=self._customer_company,

@@ -6,3 +6,7 @@ cryptography
 pydantic-settings
 qiniu
 bcrypt>=4.0
+paddleocr>=3.0.0
+onnxruntime
+Pillow
+numpy
