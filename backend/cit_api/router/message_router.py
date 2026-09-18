@@ -14,8 +14,8 @@ router = APIRouter(prefix="/api/chat", tags=["聊天记录"], dependencies=[Depe
 
 # 允许的扩展名
 ALLOWED_EXTS = {'.png', '.jpg', '.jpeg', '.bmp', '.gif', '.webp', '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.txt', '.csv'}
-# 文件大小限制 10MB
-MAX_FILE_SIZE = 10 * 1024 * 1024
+# 文件大小限制 50MB
+MAX_FILE_SIZE = 50 * 1024 * 1024
 
 
 @router.post("/messages", response_model=ChatMessageOutDTO)
@@ -34,6 +34,12 @@ def list_messages(task_id: str, db: Session = Depends(get_db)):
 def list_companies(db: Session = Depends(get_db)):
     """获取保险公司列表（侧栏用）"""
     return ChatMessageService(db).list_companies()
+
+
+@router.get("/tasks/mine")
+def list_my_tasks(user_id: int, skip: int = 0, limit: int = 50, db: Session = Depends(get_db)):
+    """PySide 专用：获取当前用户自己的任务列表"""
+    return ChatMessageService(db).list_tasks_by_user(user_id, skip, limit)
 
 
 @router.get("/tasks", response_model=list[ChatTaskOutDTO])
@@ -57,7 +63,7 @@ async def upload_files(
 
         # 大小校验
         if len(content) > MAX_FILE_SIZE:
-            raise HTTPException(400, f"文件过大：{file.filename}，最大允许 10MB")
+            raise HTTPException(400, f"文件过大：{file.filename}，最大允许 50MB")
 
         # 扩展名校验
         ext = os.path.splitext(file.filename or "")[1].lower()

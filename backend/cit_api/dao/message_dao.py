@@ -40,7 +40,7 @@ class ChatMessageDAO:
         """获取任务列表（直接从 insurance_tasks 查）"""
         tasks = (
             db.query(InsuranceTask)
-            .order_by(InsuranceTask.updated_at.desc())
+            .order_by(InsuranceTask.updated_at.asc())
             .offset(skip)
             .limit(limit)
             .all()
@@ -106,13 +106,52 @@ class ChatMessageDAO:
         return result
 
     @staticmethod
+    def list_tasks_by_user(db: Session, user_id: int, skip: int = 0, limit: int = 50) -> list[dict]:
+        """按用户获取任务列表（PySide 专用）"""
+        tasks = (
+            db.query(InsuranceTask)
+            .filter(InsuranceTask.user_id == user_id)
+            .order_by(InsuranceTask.updated_at.asc())
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
+        task_ids = [t.task_id for t in tasks]
+        msg_counts: dict[str, int] = {}
+        if task_ids:
+            rows = (
+                db.query(ChatMessage.task_id, func.count(ChatMessage.id))
+                .filter(ChatMessage.task_id.in_(task_ids))
+                .group_by(ChatMessage.task_id)
+                .all()
+            )
+            msg_counts = {r[0]: r[1] for r in rows}
+        return [
+            {
+                "task_id": t.task_id,
+                "status": t.status,
+                "business_type": t.business_type,
+                "insurance_company": t.insurance_company,
+                "customer_company": t.customer_company,
+                "creator": t.creator,
+                "user_id": t.user_id,
+                "operator": t.operator,
+                "operator_id": t.operator_id,
+                "msg_count": msg_counts.get(t.task_id, 0),
+                "created_at": t.created_at,
+                "updated_at": t.updated_at,
+            }
+            for t in tasks
+        ]
+
+    @staticmethod
     def list_tasks_by_company(db: Session, company: str, skip: int = 0, limit: int = 50) -> list[dict]:
         """按保险公司获取任务列表"""
         from sqlalchemy import func
         tasks = (
             db.query(InsuranceTask)
             .filter(InsuranceTask.insurance_company == company)
-            .order_by(InsuranceTask.updated_at.desc())
+            .order_by(InsuranceTask.updated_at.asc())
             .offset(skip)
             .limit(limit)
             .all()

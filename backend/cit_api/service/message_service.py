@@ -75,6 +75,23 @@ class ChatMessageService:
         """获取保险公司列表（侧栏用）"""
         return self.dao.list_companies(self.db)
 
+    def list_tasks_by_user(self, user_id: int, skip: int = 0, limit: int = 50) -> list[ChatTaskOutDTO]:
+        """按用户获取任务列表（PySide 专用）"""
+        tasks = self.dao.list_tasks_by_user(self.db, user_id, skip, limit)
+        task_ids = [t['task_id'] for t in tasks]
+        msg_map = self.dao.list_messages_batch(self.db, task_ids)
+        comment_map = self.dao.list_comments_batch(self.db, task_ids)
+        user_ids = list({t['user_id'] for t in tasks if t.get('user_id')})
+        name_map = self._get_user_names(user_ids)
+        result = []
+        for t in tasks:
+            dto = ChatTaskOutDTO(**t)
+            dto.creator_name = name_map.get(t.get('user_id')) or t.get('creator')
+            dto.messages = [ChatMessageOutDTO.model_validate(m) for m in msg_map.get(t['task_id'], [])]
+            dto.comments = [TaskCommentDTO.model_validate(c) for c in comment_map.get(t['task_id'], [])]
+            result.append(dto)
+        return result
+
     def list_tasks_by_company(self, company: str, skip: int = 0, limit: int = 50) -> list[ChatTaskOutDTO]:
         """按保险公司获取任务列表（含嵌入的 messages 和 comments）"""
         tasks = self.dao.list_tasks_by_company(self.db, company, skip, limit)

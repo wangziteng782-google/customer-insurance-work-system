@@ -157,9 +157,45 @@ function markSeen(task) {
   if (task.updated_at) localStorage.setItem('seen_' + task.id, task.updated_at);
 }
 
+// ── 安全渲染：render() 会重建整块列表 DOM，如果用户正在选中文字（准备复制），
+//    重建会把选区清掉导致复制失败，因此这种情况下推迟渲染 ──
+let renderPending = false;
+
+function canSafelyRender() {
+  const sel = window.getSelection && window.getSelection();
+  return !(sel && String(sel).length > 0);
+}
+
+function safeRender() {
+  if (canSafelyRender()) {
+    renderPending = false;
+    render();
+  } else {
+    renderPending = true;
+  }
+}
+
+// 选区取消后补一次渲染（例如用户复制完点开空白处）
+document.addEventListener('mouseup', () => {
+  if (!renderPending) return;
+  setTimeout(() => {
+    if (canSafelyRender()) {
+      renderPending = false;
+      render();
+    }
+  }, 0);
+});
+
 function markTaskSeen(i) {
   const t = renderedTasks[i];
-  if (t) { markSeen(t); render(); }
+  if (!t) return;
+  // 用户正在选中/复制文字时直接返回，避免重建 DOM 把选区清掉
+  const sel = window.getSelection && window.getSelection();
+  if (sel && String(sel).length > 0) return;
+  // 本就没有未读内容：无需重渲染，保持 DOM 与选中状态不动
+  if (!isUnread(t)) return;
+  markSeen(t);
+  render();
 }
 
 function companyHasUnread(company) {
@@ -589,6 +625,7 @@ function ocrStart() {
       btn.textContent = "重新识别";
       btn.onclick = ocrStart;
       document.getElementById("ocrVerifyBtn").style.display = "inline-flex";
+      document.getElementById("ocrCopyBtn").style.display = "inline-flex";
       ocrFillResult();
       toast("OCR 识别完成");
     })
@@ -614,6 +651,33 @@ function ocrFillResult() {
   document.getElementById("ocrVerifyTip").style.display = "none";
 }
 
+function ocrCopyResults() {
+  // 优先复制校验结果表格（Tab 分隔多列）
+  if (window._verifyResults && window._verifyResults.length) {
+    const lines = ['姓名\t身份证号\t状态\t出生日期\t年龄\t性别'];
+    window._verifyResults.forEach(r => {
+      lines.push([
+        r.name || '',
+        r.id_card || '',
+        r.is_valid ? '通过' : '失败',
+        r.birth_date || '',
+        r.age != null ? r.age + '岁' : '',
+        r.gender || '',
+      ].join('\t'));
+    });
+    navigator.clipboard.writeText(lines.join('\n')).then(() => toast('校验结果已复制')).catch(() => toast('复制失败'));
+    return;
+  }
+  // 否则复制识别结果（姓名\t身份证号）
+  const ta = document.getElementById("ocrSummary");
+  if (!ta) return;
+  const text = ta.value.split('\n').map(l => l.trim()).filter(Boolean).map(line => {
+    const m = line.match(/^(.+?)\s+(\d{17}[\dXx])$/);
+    return m ? m[1] + '\t' + m[2] : line;
+  }).join('\n');
+  navigator.clipboard.writeText(text).then(() => toast('已复制到剪贴板')).catch(() => toast('复制失败'));
+}
+
 function ocrVerify() {
   const tip = document.getElementById("ocrVerifyTip");
   tip.style.display = "block";
@@ -637,6 +701,8 @@ function ocrVerify() {
     tip.innerHTML = verifyTable(results) +
       '<div class="verify-summary">校验完成：<span class="vs-ok">' + pass + ' 通过</span>，<span class="vs-fail">' + fail + ' 失败</span></div>';
     toast('校验完成：' + pass + ' 通过，' + fail + ' 失败');
+    window._verifyResults = results;
+    document.getElementById("ocrCopyBtn").style.display = "inline-flex";
   }).catch(e => { tip.innerHTML = '<div class="cr-verify fail">校验失败：' + e.message + '</div>'; });
 }
 
@@ -771,12 +837,13 @@ async function init() {
   } catch (e) {
     toast("加载失败：" + e.message);
   }
-  // 自动刷新（30秒）— 用于检测 PySide 新增的消息/图片
+  // 自动刷新（15 秒）— 检测客服端新增的消息/图片
+  // 用 safeRender：用户正在选中文字或输入时延迟重建 DOM，避免打断复制
   setInterval(async () => {
     try {
       await loadCompanies();
       await loadTasks();
-      render();
+      safeRender();
     } catch {}
   }, 15000);
 }

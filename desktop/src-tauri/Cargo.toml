@@ -1,0 +1,30 @@
+[package]
+name = "insurance-client"
+version = "1.0.0"
+description = "易梯保险系统桌面客户端"
+edition = "2021"
+
+# 更多 Cargo 配置参考 https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# `_lib` 后缀在 Windows 上可能不合规，改用全小写下划线
+name = "insurance_client_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.dev]
+incremental = true
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true
