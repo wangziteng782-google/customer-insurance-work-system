@@ -147,6 +147,21 @@ export async function createChatMessage(payload) {
   return resp.json();
 }
 
+/** 撤回消息（物理删除，仅限本人发送且 2 分钟内） */
+export async function recallMessage(messageId) {
+  const resp = await fetchTimeout(
+    `${BASE_URL}/api/chat/messages/${messageId}`,
+    { method: "DELETE", headers: authHeaders(false) },
+    5000
+  );
+  if (handle401(resp)) throw new Error("登录已过期，请重新登录");
+  if (!resp.ok) {
+    // 后端返回 {"detail": "超过 2 分钟，无法撤回"}，直接透出给用户
+    throw new Error(parseErrorDetail(await resp.text(), resp.status));
+  }
+  return resp.json();
+}
+
 /** 解析后端错误响应体，取出 detail 文案 */
 function parseErrorDetail(text, status) {
   try {
@@ -278,6 +293,20 @@ export async function changePassword(userId, oldPassword, newPassword) {
     const data = await resp.json().catch(() => ({}));
     throw new Error(data.detail || `HTTP ${resp.status}`);
   }
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  return resp.json();
+}
+
+// ── 下拉选项 API ──
+
+/** 获取某分类的下拉选项（如 insurance_company）。需登录 */
+export async function listDropdowns(category) {
+  const resp = await fetchTimeout(
+    `${BASE_URL}/api/dropdowns/${encodeURIComponent(category)}`,
+    { headers: authHeaders() },
+    3000
+  );
+  if (handle401(resp)) return [];
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
   return resp.json();
 }

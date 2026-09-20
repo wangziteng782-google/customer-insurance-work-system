@@ -44,13 +44,14 @@
       </div>
     </div>
 
-    <!-- 右键复制菜单 -->
+    <!-- 右键菜单：复制文本 / 撤回 -->
     <div
       v-if="menuVisible"
       class="ctx-menu"
       :style="{ left: menuX + 'px', top: menuY + 'px' }"
     >
-      <div class="ctx-item" @click="copyText">复制文本</div>
+      <div v-if="content" class="ctx-item" @click="copyText">复制文本</div>
+      <div v-if="canRecall" class="ctx-item" @click="onRecall">撤回</div>
     </div>
   </div>
 </template>
@@ -64,9 +65,11 @@ const props = defineProps({
   content: { type: String, default: "" },
   filePaths: { type: Array, default: null },
   isHandler: { type: Boolean, default: false },
+  // 能否撤回（自己发的 + 2 分钟内），由父组件判断后传入
+  canRecall: { type: Boolean, default: false },
 });
 
-defineEmits(["view-image"]);
+const emit = defineEmits(["view-image", "recall"]);
 
 const imagePaths = computed(() =>
   (props.filePaths || []).filter((p) => isImagePath(p))
@@ -90,10 +93,16 @@ const menuX = ref(0);
 const menuY = ref(0);
 
 function onContextMenu(e) {
-  if (!props.content) return;
+  // 纯附件消息没有文本，但可能可以撤回，所以两者都不满足才不弹菜单
+  if (!props.content && !props.canRecall) return;
   menuX.value = Math.min(e.clientX, window.innerWidth - 130);
-  menuY.value = Math.min(e.clientY, window.innerHeight - 50);
+  menuY.value = Math.min(e.clientY, window.innerHeight - 96);
   menuVisible.value = true;
+}
+
+function onRecall() {
+  closeMenu();
+  emit("recall");
 }
 
 function closeMenu() {

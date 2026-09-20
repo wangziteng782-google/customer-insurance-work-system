@@ -62,8 +62,10 @@ async function loadCompanies() {
   } catch {}
 }
 
-async function loadTasks(company) {
-  const resp = await authFetch('/api/chat/tasks?limit=1000');
+async function loadTasks(company, search) {
+  let url = '/api/chat/tasks?limit=1000';
+  if (search) url += '&search=' + encodeURIComponent(search);
+  const resp = await authFetch(url);
   if (!resp.ok) throw new Error('加载任务失败');
   const raw = await resp.json();
   const normalized = await Promise.all(raw.map(async t => {
@@ -99,16 +101,34 @@ function countImagesFromMessages(messages) {
   return count;
 }
 
+// 时间戳格式化：2026-09-18T09:01:44 → 2026-09-18 09:01:44
+const fmtTs = v => String(v || "").replace('T', ' ').slice(0, 19);
+
+// 附件文件名（后端上传时按原文件名命名并做了 URL 转义，这里解回来）
+function decodeName(raw) {
+  try {
+    return decodeURIComponent(raw || "");
+  } catch {
+    return raw || "";   // 含非法转义（如名字里带 %）时原样返回，不抛异常
+  }
+}
+
 // API 字段 → 模板字段映射
 function normalizeTask(t, comments, images, messages) {
   const isReturned = RETURNED_STATUSES.includes(t.status);
   const rejectReason = isReturned && comments.length ? comments[comments.length - 1].content : "";
+  // 最新一条消息的发送时间（列表按 updated_at 升序排，通常与该时间一致）
+  const lastMsgAt = (messages || []).reduce(
+    (m, x) => (x.created_at && String(x.created_at) > m ? String(x.created_at) : m),
+    ""
+  );
   return {
     id: t.task_id,
     _insuranceCompany: t.insurance_company || "未知",
     company: t.customer_company || t.insurance_company || "未知",
     user: t.creator || "未知",
-    time: t.created_at ? String(t.created_at).replace('T', ' ').slice(0, 19) : "",
+    time: fmtTs(t.created_at),          // head-row2 展示：任务创建时间
+    lastMsgAt: fmtTs(lastMsgAt),        // 最新消息时间（= 通常意义上的"更新时间"）
     updated_at: t.updated_at || t.created_at || "",
     type: TYPE_LABELS[t.business_type] || "新投",
     status: t.status,
@@ -147,44 +167,34 @@ function getCompanyGroups() {
 // ── 侧栏渲染 ──
 
 // ── 未读标记（localStorage + updated_at）──
+/** 未读判据：本地没记录过"已读"，或这条在你上次查看之后又被更新过 */
+function isUnreadOf(id, updatedAt) {
+  if (!id || !updatedAt) return false;
+  const seen = localStorage.getItem('seen_' + id);
+  return !seen || updatedAt > seen;
+}
+
 function isUnread(task) {
-  if (!task.updated_at) return false;
-  const seen = localStorage.getItem('seen_' + task.id);
-  return !seen || task.updated_at > seen;
+  return isUnreadOf(task.id, task.updated_at);
 }
 
 function markSeen(task) {
   if (task.updated_at) localStorage.setItem('seen_' + task.id, task.updated_at);
 }
 
-// ── 安全渲染：render() 会重建整块列表 DOM，如果用户正在选中文字（准备复制），
-//    重建会把选区清掉导致复制失败，因此这种情况下推迟渲染 ──
-let renderPending = false;
-
-function canSafelyRender() {
-  const sel = window.getSelection && window.getSelection();
-  return !(sel && String(sel).length > 0);
-}
-
-function safeRender() {
-  if (canSafelyRender()) {
-    renderPending = false;
+async function refreshTasks() {
+  const btn = document.querySelector('.refresh-tasks-btn');
+  if (btn) btn.classList.add('busy'); // 点击后图标持续旋转，直到刷新完成
+  try {
+    await loadTasks();
     render();
-  } else {
-    renderPending = true;
+    toast('已刷新');
+  } catch (e) {
+    toast('刷新失败');
+  } finally {
+    if (btn) btn.classList.remove('busy');
   }
 }
-
-// 选区取消后补一次渲染（例如用户复制完点开空白处）
-document.addEventListener('mouseup', () => {
-  if (!renderPending) return;
-  setTimeout(() => {
-    if (canSafelyRender()) {
-      renderPending = false;
-      render();
-    }
-  }, 0);
-});
 
 function markTaskSeen(i) {
   const t = renderedTasks[i];
@@ -199,11 +209,37 @@ function markTaskSeen(i) {
 }
 
 function companyHasUnread(company) {
+  // 优先用 /api/chat/companies 的 task_times：侧栏 15s 轻量轮询这个接口时红点也能刷新
+  const c = allCompanies.find(x => x.name === company);
+  if (c && Array.isArray(c.task_times)) {
+    return c.task_times.some(x => isUnreadOf(x.id, x.updated_at));
+  }
+  // 兼容没有 task_times 的接口：退回已加载的全量任务数据
   return allAllTasks.some(t => (t._insuranceCompany || t.insurance_company) === company && isUnread(t));
 }
 
 function hasNewImages(task) {
   return isUnread(task) && (task.messages || []).some(m => (m.file_paths || []).length > 0);
+}
+
+// ── 置顶保险公司（localStorage 保存顺序，数组下标即显示位置）──
+const PINNED_KEY = 'pinned_companies';
+
+function getPinned() {
+  try {
+    return JSON.parse(localStorage.getItem(PINNED_KEY) || '[]');
+  } catch {
+    return [];
+  }
+}
+
+function togglePin(name) {
+  const pinned = getPinned();
+  const i = pinned.indexOf(name);
+  if (i >= 0) pinned.splice(i, 1); // 已置顶 → 取消
+  else pinned.push(name);          // 未置顶 → 追加到置顶区末尾
+  localStorage.setItem(PINNED_KEY, JSON.stringify(pinned));
+  renderSidebar();
 }
 
 function renderSidebar() {
@@ -215,16 +251,24 @@ function renderSidebar() {
 
   let html = '';
   const totalCount = allCompanies.reduce((s, c) => s + c.count, 0);
-  const totalUsers = [...new Set(allCompanies.flatMap(c => c.users || []))];
   html += `<button class="company${currentCompany === '全部' ? ' active' : ''}" data-company="全部" onclick="selectCompany('全部',this)">
-    <div class="company-left"><span class="company-name">全部</span><span class="company-meta">${totalCount} 条 · ${totalUsers.join('、')}</span></div>
+    <div class="company-left"><span class="company-name">全部</span></div>
     <span class="badge">${totalCount}</span>
   </button>`;
 
-  allCompanies.forEach(c => {
-    const dot = companyHasUnread(c.name) ? '<i style="width:7px;height:7px;border-radius:50%;background:#f5222d;display:inline-block;margin-left:4px;vertical-align:middle;"></i>' : '';
+  // 置顶的排前面（按置顶先后），其余保持原顺序
+  const pinned = getPinned();
+  const ordered = [
+    ...pinned.map(n => allCompanies.find(c => c.name === n)).filter(Boolean),
+    ...allCompanies.filter(c => !pinned.includes(c.name)),
+  ];
+
+  ordered.forEach(c => {
+    const dot = companyHasUnread(c.name) ? '<i class="new-flag"></i>' : '';
+    const on = pinned.includes(c.name);
     html += `<button class="company${currentCompany === c.name ? ' active' : ''}" data-company="${c.name}" onclick="selectCompany('${c.name}',this)">
-      <div class="company-left"><span class="company-name">${c.name}</span><span class="company-meta">${c.count} 条 · ${(c.users || []).join('、')}</span></div>
+      <div class="company-left"><span class="company-name">${c.name}</span></div>
+      <span class="pin-btn${on ? ' on' : ''}" title="${on ? '取消置顶' : '置顶该保险公司'}" onclick="event.stopPropagation();togglePin('${c.name}')">${on ? '已置顶' : '置顶'}</span>
       <span class="badge">${c.count}</span>${dot}
     </button>`;
   });
@@ -267,9 +311,11 @@ function render() {
   // 筛选任务
   const statusChecks = Array.from(document.querySelectorAll("#statusFilter input:checked")).map(c => parseInt(c.value));
   const typeVal = (document.getElementById("typeFilter") || {}).value || "";
+  const kw = ((document.getElementById("keywordInput") || {}).value || "").trim().toLowerCase();
   const baseTasks = selected.length ? d.tasks.filter(t => selected.includes(t.user)) : d.tasks;
   let tasks = statusChecks.length ? baseTasks.filter(t => statusChecks.includes(t.status)) : baseTasks;
   if (typeVal) tasks = tasks.filter(t => (t.type || "新投") === typeVal);
+  if (kw) tasks = tasks.filter(t => `${t.company} ${t.user} ${t.id}`.toLowerCase().includes(kw));
   document.getElementById("listCount").textContent = tasks.length;
 
   const wrap = document.getElementById("taskTableWrap");
@@ -286,8 +332,14 @@ function render() {
     const stCls = STATUS_CSS[t.status] || "tag-processing";
     const stLabel = STATUS_LABELS[t.status] || "未知";
     const isReturned = RETURNED_STATUSES.includes(t.status);
+    // 卡片左上角红点：判据与侧栏保险公司红点完全一致（见 isUnread / markTaskSeen），
+    // 区别只在位置和样式，用来指向"这张单有新的提单消息"
+    const unreadDot = isUnread(t)
+      ? '<i class="unread-dot card" title="有新的提单消息"></i>'
+      : "";
     return `
     <div class="task-item">
+      ${unreadDot}
       <div class="task-head">
         <div class="task-head-left">
           <div class="head-info">
@@ -295,7 +347,7 @@ function render() {
               <span class="name">${t.company || t.user}</span>
               <span class="type-tag ${t.type === '批改' ? 'type-end' : 'type-new'}">${t.type || '新投'}</span>
             </div>
-            <div class="head-row2">
+            <div class="head-row2" title="创建：${t.time}${t.lastMsgAt ? `｜最新消息：${t.lastMsgAt}` : ""}">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
               <span class="creator">${t.user}</span>
               <span class="dot-sep">·</span>
@@ -313,6 +365,8 @@ function render() {
           <button class="detail-btn" onclick="openModal(${i})">查看详情 →</button>
         </div>
       </div>
+      <details class="msg-fold" ${t.status === 3 ? "" : "open"}>
+      <summary></summary>
       <div class="msg-block" onclick="markTaskSeen(${i})">
         ${(() => {
           const msgs = (t.messages || []).slice().sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
@@ -336,11 +390,12 @@ function render() {
           }).join('');
         })()}
       </div>
+      </details>
       ${isReturned && t.rejectReason ? `<div class="reject-box"><div class="rb-head"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>退回原因</div><div class="rb-body">${t.rejectReason}</div></div>` : ''}
       <div class="task-foot">
         <div class="foot-left">
-          <span class="stat-chip">${ICONS.img}<span><b>${t.images}</b> 张图片</span></span>
-          <span class="stat-chip">${ICONS.file}<span><b>${t.docCount}</b> 个附件</span></span>
+          <button type="button" class="stat-chip" title="点击查看图片并做 OCR 识别" onclick="runCardOCR(${i})">${ICONS.img}<span><b>${t.images}</b> 张图片</span></button>
+          <button type="button" class="stat-chip" title="点击查看附件详情" onclick="openModal(${i})">${ICONS.file}<span><b>${t.docCount}</b> 个附件</span></button>
           <span class="stat-chip">${ICONS.search}<span><b>${t.msgCount}</b> 条消息</span></span>
         </div>
       </div>
@@ -376,13 +431,24 @@ function toggleUser(user) {
   render();
 }
 
+// 关键词查询（查询按钮 / 输入框回车）
+function doQuery() {
+  const keyword = document.getElementById('keywordInput').value.trim();
+  loadTasks(currentCompany, keyword).then(render).catch(() => toast('查询失败'));
+}
+
+// 状态「全部」：清空所有状态勾选（按钮高亮由 CSS 判断，无需 JS 维护）
+function resetStatusFilter() {
+  document.querySelectorAll("#statusFilter input").forEach(c => c.checked = false);
+  render();
+}
+
 function resetFilter() {
   selected = [];
   document.querySelectorAll(".filter-input").forEach(i => i.value = "");
   document.querySelectorAll(".filter-select").forEach(s => s.selectedIndex = 0);
   document.querySelectorAll("#statusFilter input").forEach(c => c.checked = false);
-  render();
-  toast("已重置筛选条件");
+  loadTasks(currentCompany).then(render).catch(() => toast('重置失败'));
 }
 
 async function refreshData() {
@@ -430,7 +496,7 @@ async function openModal(i) {
         else if (ext === '.pdf') type = "pdf";
         else if (ext === '.doc' || ext === '.docx') type = "word";
         else if (ext === '.xls' || ext === '.xlsx') type = "excel";
-        files.push({ name: url.split('/').pop(), type: type, size: "", url: url });
+        files.push({ name: decodeName(url.split('/').pop()), type: type, size: "", url: url });
       });
     });
     // 提单详情只展示文档附件，不展示图片
@@ -524,21 +590,57 @@ async function confirmStatus() {
   }
 }
 
-// ── OCR 弹窗（UI 占位） ──
+// ── OCR 弹窗 ──
 
 let ocrTaskIdx = -1;
+let ocrTaskId = "";
+let ocrImages = [];          // 当前任务的身份证图片 [{url, created_at}]
+let ocrSelected = new Set(); // 已勾选的图片下标
+let ocrFiles = {};           // 预取的图片二进制 File（下标 → File），用于拖拽出真实文件
+
+// OCR 识别结果按任务持久化：关闭弹窗、刷新页面都保留，只有「重新识别」才覆盖
+const OCR_CACHE_KEY = "ocr_text_cache";
+
+function ocrCacheAll() {
+  try {
+    return JSON.parse(localStorage.getItem(OCR_CACHE_KEY) || "{}");
+  } catch {
+    return {};
+  }
+}
+
+function ocrGetCached(taskId) {
+  return ocrCacheAll()[taskId] || "";
+}
+
+// 把识别结果写入文本框（用 .value 赋值，避免内容含特殊字符破坏 HTML）
+function ocrSetResultText(text) {
+  document.getElementById("ocrResultArea").innerHTML =
+    `<textarea class="cr-edit ocr-summary" id="ocrSummary" placeholder="识别结果为空，可手动输入或粘贴" oninput="ocrSaveText()"></textarea>`;
+  document.getElementById("ocrSummary").value = text || "";
+}
+
+// 手动编辑后同步到缓存
+function ocrSaveText() {
+  if (!ocrTaskId) return;
+  const ta = document.getElementById("ocrSummary");
+  if (!ta) return;
+  const all = ocrCacheAll();
+  all[ocrTaskId] = ta.value;
+  localStorage.setItem(OCR_CACHE_KEY, JSON.stringify(all));
+}
 
 function runCardOCR(i) {
   const t = renderedTasks[i];
   if (!t) return;
   ocrTaskIdx = i;
+  ocrTaskId = t.id;
   // 收集任务中的所有图片 URL
   const imgUrls = (t.messages || []).flatMap(m => m.file_paths || [])
     .filter(url => IMAGE_EXTS.includes('.' + url.split('.').pop().toLowerCase()));
   document.getElementById("ocrSub").textContent = (t.company || t.user) + " · " + (t.type || "新投");
   const newImgMarker = hasNewImages(t) ? "新" : "";
   document.getElementById("ocrImgCount").textContent = imgUrls.length + " 张" + (newImgMarker ? " · " + newImgMarker + "图片" : "");
-  const seen = localStorage.getItem('seen_' + t.id);
   const imgWithTime = [];
   (t.messages || []).forEach(m => {
     (m.file_paths || []).forEach(url => {
@@ -547,27 +649,35 @@ function runCardOCR(i) {
       }
     });
   });
-  document.getElementById("ocrThumbList").innerHTML = imgWithTime.length ? imgWithTime.map((item, k) => {
-    const isNew = !seen || item.created_at > seen;
-    const imgNew = isNew ? '<span class="unread-dot ocr"></span>' : '';
-    return `<div class="ocr-thumb${k === 0 ? " active" : ""}" id="ocrThumb-${k}" onclick="ocrSelect(${k});openImgViewer('${item.url}','图片 ${k+1}')" title="点击查看大图">
-      ${imgNew}<img src="${item.url}" alt="图片 ${k+1}" onerror="this.style.display='none'">
-      <div class="ocr-thumb-label">图片 ${k+1}</div>
-    </div>`;
-  }).join("") : '<div style="color:#999;padding:20px;">该任务暂无图片</div>';
-  document.getElementById("ocrResultArea").innerHTML = `
+  ocrImages = imgWithTime;
+  ocrSelected = new Set();
+  renderOcrThumbs();
+  ocrPrefetchFiles(); // 后台预取二进制，拖拽时才能交出"真实文件"
+  document.getElementById("ocrVerifyTip").style.display = "none";
+  // 该任务之前识别过 → 回显上次结果；只有点「重新识别」才会覆盖
+  const cached = ocrGetCached(t.id);
+  if (cached) {
+    ocrSetResultText(cached);
+    document.getElementById("ocrVerifyBtn").style.display = "inline-flex";
+    document.getElementById("ocrCopyBtn").style.display = "inline-flex";
+    document.getElementById("ocrActionBtn").textContent = "重新识别";
+  } else {
+    document.getElementById("ocrResultArea").innerHTML = `
     <div class="ocr-loading">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="32" height="32" style="color:var(--gray-300)"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 8h3M7 12h5M7 16h4M15 8v8M18 8v8"/></svg>
       点击下方"开始识别"按钮进行 OCR 识别
     </div>`;
-  document.getElementById("ocrVerifyTip").style.display = "none";
-  document.getElementById("ocrVerifyBtn").style.display = "none";
-  document.getElementById("ocrActionBtn").textContent = "开始识别";
+    document.getElementById("ocrVerifyBtn").style.display = "none";
+    document.getElementById("ocrCopyBtn").style.display = "none";
+    document.getElementById("ocrActionBtn").textContent = "开始识别";
+  }
   document.getElementById("ocrActionBtn").onclick = ocrStart;
   document.getElementById("ocrMask").classList.add("show");
 }
 
 function closeOcrModal() {
+  ocrSaveText(); // 关闭前保存手动编辑的内容
+  window._verifyResults = null;
   if (ocrTaskIdx >= 0 && renderedTasks[ocrTaskIdx]) markSeen(renderedTasks[ocrTaskIdx]);
   document.getElementById("ocrMask").classList.remove("show");
 }
@@ -591,8 +701,123 @@ function viewerRotate() {
 }
 function closeImgViewer() { document.getElementById("imgViewer").classList.remove("show"); }
 
-function ocrSelect(k) {
-  document.querySelectorAll(".ocr-thumb").forEach((el, idx) => el.classList.toggle("active", idx === k));
+// ── 缩略图：勾选 / 全选 / 拖拽 / 批量下载 ──
+
+function renderOcrThumbs() {
+  const list = document.getElementById("ocrThumbList");
+  if (!list) return;
+  if (!ocrImages.length) {
+    list.innerHTML = '<div style="color:#999;padding:20px;">该任务暂无图片</div>';
+    updateOcrSelBar();
+    return;
+  }
+  const seen = localStorage.getItem("seen_" + ocrTaskId);
+  list.innerHTML = ocrImages.map((item, k) => {
+    const isNew = !seen || item.created_at > seen;
+    const imgNew = isNew ? '<span class="unread-dot ocr"></span>' : '';
+    const sel = ocrSelected.has(k) ? " sel" : "";
+    return `<div class="ocr-thumb${sel}" id="ocrThumb-${k}" draggable="true"
+        ondragstart="ocrDragStart(event, ${k})"
+        onclick="ocrToggleSelect(${k})"
+        ondblclick="openImgViewer('${item.url}','图片 ${k+1}')"
+        title="单击勾选 · 双击查看大图 · 可直接拖拽">
+      <span class="ocr-check">✓</span>
+      ${imgNew}<img src="${item.url}" alt="图片 ${k+1}" draggable="false" onerror="this.style.display='none'">
+      <div class="ocr-thumb-label">图片 ${k+1}</div>
+    </div>`;
+  }).join("");
+  updateOcrSelBar();
+}
+
+// 后台预取图片二进制：拖拽时能交出真实 File（拖到文件夹会直接落文件，且支持多张）
+// 缩略图已加载过同样的 URL，这里基本命中浏览器缓存，开销很小
+async function ocrPrefetchFiles() {
+  const snapshot = ocrImages;
+  ocrFiles = {};
+  for (let k = 0; k < snapshot.length; k++) {
+    try {
+      const resp = await fetch(snapshot[k].url);
+      if (!resp.ok) continue;
+      const blob = await resp.blob();
+      ocrFiles[k] = new File([blob], `图片${k + 1}.jpg`, {
+        type: blob.type || "image/jpeg",
+      });
+    } catch {
+      /* 跨域或网络失败：拖拽时退回 DownloadURL 方式 */
+    }
+  }
+}
+
+// 同步「全选」与「下载所选(N)」的状态
+function updateOcrSelBar() {
+  const all = document.getElementById("ocrSelectAll");
+  if (all) {
+    all.checked = ocrImages.length > 0 && ocrSelected.size === ocrImages.length;
+    all.parentElement.style.display = ocrImages.length ? "inline-flex" : "none";
+  }
+  const n = ocrSelected.size;
+  const btn = document.getElementById("ocrDownloadBtn");
+  if (btn) btn.disabled = n === 0;
+  const cnt = document.getElementById("ocrDownloadCount");
+  if (cnt) cnt.textContent = n ? `(${n})` : "";
+}
+
+function ocrToggleSelect(k) {
+  if (ocrSelected.has(k)) ocrSelected.delete(k);
+  else ocrSelected.add(k);
+  renderOcrThumbs();
+}
+
+function ocrToggleAll(el) {
+  ocrSelected = el.checked ? new Set(ocrImages.map((_, k) => k)) : new Set();
+  renderOcrThumbs();
+}
+
+// 拖拽缩略图到桌面 / 文件夹 / 微信等
+// 优先交出真实 File 对象（最可靠，且勾选后可一次拖多张）；二进制未预取到则退回 DownloadURL
+function ocrDragStart(e, k) {
+  const dt = e.dataTransfer;
+  dt.effectAllowed = "copy";
+  // 有勾选时拖的是「所选」，否则只拖当前这张
+  const list = ocrSelected.size ? [...ocrSelected].sort((a, b) => a - b) : [k];
+  const targets = list.includes(k) ? list : [k];
+  const files = targets.map(i => ocrFiles[i]).filter(Boolean);
+  if (files.length) {
+    files.forEach(f => dt.items.add(f));
+    return; // 不要同时写 text/uri-list，否则接收方会当成网址去"下载"
+  }
+  const item = ocrImages[k];
+  if (item) {
+    dt.setData("DownloadURL", `image/jpeg:图片${k + 1}.jpg:${item.url}`);
+  }
+}
+
+// 下载所选图片（逐张下载，间隔 400ms 避免浏览器拦截多文件）
+async function ocrDownloadSelected() {
+  const idx = [...ocrSelected].sort((a, b) => a - b);
+  if (!idx.length) return;
+  toast(`开始下载 ${idx.length} 张图片`);
+  for (let i = 0; i < idx.length; i++) {
+    await ocrDownloadOne(ocrImages[idx[i]].url, `图片${idx[i] + 1}.jpg`);
+    if (i < idx.length - 1) await new Promise(r => setTimeout(r, 400));
+  }
+}
+
+async function ocrDownloadOne(url, name) {
+  try {
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error(resp.status);
+    const blob = await resp.blob();
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
+  } catch {
+    // 跨域拿不到文件内容时兜底：新窗口打开，可右键另存为
+    window.open(url, "_blank");
+  }
 }
 
 function ocrStart() {
@@ -644,31 +869,14 @@ let ocrErrors = [];
 function ocrFillResult() {
   const lines = ocrResults.map((r, i) => {
     if (!r) return `（第 ${i + 1} 张识别失败）`;
-    return (r.name || "未知") + " " + r.id_number;
+    return r.name ? `${r.name} ${r.id_number}` : r.id_number;
   });
-  document.getElementById("ocrResultArea").innerHTML = `
-    <textarea class="cr-edit ocr-summary" id="ocrSummary" placeholder="识别结果为空，可手动输入或粘贴">${lines.join("\n")}</textarea>`;
+  ocrSetResultText(lines.join("\n"));
+  ocrSaveText(); // 识别结果立即写入缓存，关闭弹窗后仍可回显
   document.getElementById("ocrVerifyTip").style.display = "none";
 }
 
 function ocrCopyResults() {
-  // 优先复制校验结果表格（Tab 分隔多列）
-  if (window._verifyResults && window._verifyResults.length) {
-    const lines = ['姓名\t身份证号\t状态\t出生日期\t年龄\t性别'];
-    window._verifyResults.forEach(r => {
-      lines.push([
-        r.name || '',
-        r.id_card || '',
-        r.is_valid ? '通过' : '失败',
-        r.birth_date || '',
-        r.age != null ? r.age + '岁' : '',
-        r.gender || '',
-      ].join('\t'));
-    });
-    navigator.clipboard.writeText(lines.join('\n')).then(() => toast('校验结果已复制')).catch(() => toast('复制失败'));
-    return;
-  }
-  // 否则复制识别结果（姓名\t身份证号）
   const ta = document.getElementById("ocrSummary");
   if (!ta) return;
   const text = ta.value.split('\n').map(l => l.trim()).filter(Boolean).map(line => {
@@ -837,13 +1045,11 @@ async function init() {
   } catch (e) {
     toast("加载失败：" + e.message);
   }
-  // 自动刷新（15 秒）— 检测客服端新增的消息/图片
-  // 用 safeRender：用户正在选中文字或输入时延迟重建 DOM，避免打断复制
+  // 自动刷新（15 秒）— 仅刷新侧栏保险公司列表，任务卡片需手动刷新
   setInterval(async () => {
     try {
       await loadCompanies();
-      await loadTasks();
-      safeRender();
+      renderSidebar();
     } catch {}
   }, 15000);
 }

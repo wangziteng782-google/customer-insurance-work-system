@@ -43,20 +43,6 @@ export function roleLabel(role) {
   return ROLE_MAP[role] || "用户";
 }
 
-/** 保险公司列表（新建保单收集） */
-export const INSURANCE_COMPANIES = [
-  "河北平安",
-  "平安",
-  "人保",
-  "人寿",
-  "山东人保",
-  "申能",
-  "大地",
-  "上海太保-IE保",
-  "大地-IE保",
-  "其他-IE保"
-];
-
 /** 支持的图片扩展名 */
 export const IMAGE_EXTS = new Set([
   ".png", ".jpg", ".jpeg", ".bmp", ".gif", ".webp",
@@ -115,12 +101,17 @@ export function extOf(path) {
   return dot >= 0 ? clean.slice(dot).toLowerCase() : "";
 }
 
-/** 文件名（去掉 URL 路径） */
+/** 文件名（去掉 URL 路径，并把 URL 转义解回原名） */
 export function baseName(path) {
   if (!path) return "";
   const clean = String(path).split("?")[0];
   const parts = clean.split("/");
-  return decodeURIComponent(parts[parts.length - 1] || clean);
+  const raw = parts[parts.length - 1] || clean;
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw; // 名字里带 % 等非法转义时原样返回，避免抛异常
+  }
 }
 
 export function isImagePath(path) {

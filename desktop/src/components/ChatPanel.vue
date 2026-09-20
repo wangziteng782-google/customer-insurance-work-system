@@ -44,11 +44,13 @@
         <template v-else>
           <ChatMessage
             v-for="(m, i) in messages"
-            :key="i"
+            :key="m.id ?? i"
             :content="m.content"
             :file-paths="m.filePaths"
             :is-handler="m.type === 'handler'"
+            :can-recall="canRecall(m)"
             @view-image="openViewer"
+            @recall="onRecallMessage(m)"
           />
         </template>
       </div>
@@ -205,6 +207,7 @@ import {
   createChatMessage,
   listChatMessages,
   listTaskComments,
+  recallMessage,
   uploadFiles,
 } from "../api";
 import {
@@ -221,7 +224,7 @@ import {
 } from "../constants";
 import { store, showToast } from "../store";
 
-const emit = defineEmits(["task-created"]);
+const emit = defineEmits(["task-created", "task-changed"]);
 
 // ── 任务上下文 ──
 const pendingFiles = ref([]);
@@ -244,6 +247,8 @@ const inputExpanded = ref(false); // 输入框放大模式
 const showNewPolicy = ref(false);
 const viewer = ref(null);
 const messages = ref([]);
+// 列表接口带下来的留言：详情接口在非 待确认(2)/待补充(7) 状态返回空数组，用它兜底
+const fallbackComments = ref([]);
 const stickToBottom = ref(true);
 const hasNewBelow = ref(false);
 let historyGen = 0;
@@ -319,6 +324,7 @@ function onNewPolicyConfirm({ company, customerCompany: customer, type }) {
   currentTaskId.value = "";
   taskStatus.value = 1;
   taskMsgCount.value = 0;
+  fallbackComments.value = [];
   clearMessages();
   inputEnabled.value = true;
   nextTick(() => textareaEl.value?.focus());
@@ -337,8 +343,11 @@ function setCurrentTask(task) {
   taskStatus.value = task.status ?? 1;
   taskMsgCount.value = task.msg_count || 0;
   clearMessages();
-  // 详情接口仅在 待确认(2)/待补充(7) 状态返回留言；其余状态用列表数据兜底
-  loadHistory(currentTaskId.value, task.comments || []);
+  // 详情接口仅在 待确认(2)/待补充(7) 状态返回留言，其余状态用列表数据兜底。
+  // 兜底数据必须留存下来（而不是只当一次性参数）：
+  // 15s 自动刷新走的也是"详情接口"，不留存就会把留言刷没。
+  fallbackComments.value = task.comments || [];
+  loadHistory(currentTaskId.value);
   inputEnabled.value = true;
   nextTick(() => textareaEl.value?.focus());
 }
@@ -358,7 +367,12 @@ function snapshotKey(msgs, comments) {
 }
 
 // ── 历史加载 ──
-async function loadHistory(taskId, fallbackComments = []) {
+/** 留言取值：详情接口有就用详情，否则退回列表接口兜底（点击加载与自动刷新共用） */
+function resolveComments(comments) {
+  return comments && comments.length ? comments : fallbackComments.value;
+}
+
+async function loadHistory(taskId) {
   clearMessages();
   stickToBottom.value = true;
   loadingHistory.value = true;
@@ -370,9 +384,7 @@ async function loadHistory(taskId, fallbackComments = []) {
     ]);
     if (gen !== historyGen) return;
     loadingHistory.value = false;
-    const list =
-      comments && comments.length ? comments : fallbackComments || [];
-    renderHistory(msgs, list);
+    renderHistory(msgs, resolveComments(comments));
   } catch (e) {
     if (gen !== historyGen) return;
     loadingHistory.value = false;
@@ -398,8 +410,10 @@ async function refreshMessages() {
       listTaskComments(taskId),
     ]);
     if (gen !== historyGen || taskId !== currentTaskId.value) return;
-    if (snapshotKey(msgs, comments) === lastSnapshotKey) return;
-    renderHistory(msgs, comments);
+    // 与点击加载走同一套取值逻辑，否则非 2/7 状态的任务会被刷成"没有留言"
+    const list = resolveComments(comments);
+    if (snapshotKey(msgs, list) === lastSnapshotKey) return;
+    renderHistory(msgs, list);
   } catch (e) {
     console.error("自动刷新消息失败:", e);
   }
@@ -441,11 +455,37 @@ function renderHistory(msgs, comments) {
   }
 
   messages.value = reordered.map(([type, , data]) => ({
+    id: data.id ?? null,
     type,
     content: data.content || "",
     filePaths: data.file_paths || null,
     createdAt: data.created_at || "",
   }));
+}
+
+// ── 撤回（仅自己发的 + 2 分钟内，窗口与后端 RECALL_WINDOW_SECONDS 一致） ──
+const RECALL_WINDOW_MS = 120 * 1000;
+
+/** 能否撤回：type=user 即自己发的（客服只看到自己提的任务），且未超过 2 分钟 */
+function canRecall(m) {
+  if (!m || m.type !== "user" || !m.id) return false;
+  const t = new Date(m.createdAt).getTime();
+  if (!t) return false;
+  const gap = Date.now() - t;
+  return gap >= 0 && gap < RECALL_WINDOW_MS;
+}
+
+async function onRecallMessage(m) {
+  try {
+    await recallMessage(m.id);
+    showToast("已撤回", "success");
+    await refreshMessages(); // 数据指纹变化 → 该消息立即从面板消失
+    taskMsgCount.value = Math.max(0, (taskMsgCount.value || 0) - 1);
+    emit("task-changed"); // 通知左侧列表刷新消息数
+  } catch (e) {
+    showToast(e.message || "撤回失败", "error");
+    refreshMessages(); // 可能已超时：刷新让右键菜单项消失
+  }
 }
 
 // ── 待上传附件 ──

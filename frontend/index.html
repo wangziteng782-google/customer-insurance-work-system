@@ -30,11 +30,15 @@
   <main class="main">
     <header class="page-head">
       <div>
-        <div class="breadcrumb">工单管理 / <span id="companyTitle2">平安保险</span></div>
+        <div class="breadcrumb">
+          <span>工单管理</span>
+          <span class="bc-sep">/</span>
+          <span class="bc-current" id="companyTitle2">平安保险</span>
+        </div>
         <div class="title-row">
           <h1 id="companyTitle">平安保险</h1>
-          <span class="meta-chip" id="userTotal">1 个用户</span>
-          <span class="meta-chip" id="recordTotal">1 条记录</span>
+          <span class="meta-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg><span id="userTotal">1 个用户</span></span>
+          <span class="meta-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9h10M7 13h10M7 17h6"/></svg><span id="recordTotal">1 条记录</span></span>
         </div>
       </div>
       <div class="head-right-user">
@@ -55,7 +59,7 @@
     </header>
 
     <div class="filter-bar">
-      <div class="filter-item">
+      <div class="filter-row">
         <span class="filter-label">客服人员</span>
         <div class="multi-select" id="userSelect">
           <div class="multi-select-trigger" onclick="toggleMultiPanel()">
@@ -63,40 +67,48 @@
           </div>
           <div class="multi-select-panel" id="userSelectPanel"></div>
         </div>
-      </div>
-      <div class="filter-item">
         <span class="filter-label">做单类型</span>
         <select class="filter-select" id="typeFilter" onchange="render()"><option value="">全部</option><option value="新投">新投</option><option value="批改">批改</option></select>
       </div>
-      <div class="filter-item status-filter-item">
+
+      <div class="filter-row">
         <span class="filter-label">状态</span>
         <div class="status-checkboxes" id="statusFilter">
-          <label class="st-cb"><input type="checkbox" value="1" onchange="render()"><span class="st-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span><span class="st-dot s-processing"></span>进行中</label>
-          <label class="st-cb"><input type="checkbox" value="3" onchange="render()"><span class="st-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span><span class="st-dot s-done"></span>已做单</label>
-          <label class="st-cb"><input type="checkbox" value="4" onchange="render()"><span class="st-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span><span class="st-dot s-teal"></span>已递交</label>
-          <label class="st-cb"><input type="checkbox" value="5" onchange="render()"><span class="st-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span><span class="st-dot s-orange"></span>对公认款中</label>
-          <label class="st-cb"><input type="checkbox" value="6" onchange="render()"><span class="st-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span><span class="st-dot s-purple"></span>二维码</label>
-          <label class="st-cb"><input type="checkbox" value="9" onchange="render()"><span class="st-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span><span class="st-dot s-indigo"></span>待递交</label>
-          <label class="st-cb"><input type="checkbox" value="2" onchange="render()"><span class="st-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span><span class="st-dot s-error"></span>待确认</label>
-          <label class="st-cb"><input type="checkbox" value="7" onchange="render()"><span class="st-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span><span class="st-dot s-rejected"></span>待补充</label>
-          <label class="st-cb"><input type="checkbox" value="8" onchange="render()"><span class="st-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span><span class="st-dot s-muted"></span>已作废</label>
+          <button type="button" id="statusAllBtn" class="st-cb" onclick="resetStatusFilter()">全部</button>
+          <label class="st-cb"><input type="checkbox" value="1" onchange="render()">进行中</label>
+          <label class="st-cb"><input type="checkbox" value="3" onchange="render()">已做单</label>
+          <label class="st-cb"><input type="checkbox" value="4" onchange="render()">已递交</label>
+          <label class="st-cb"><input type="checkbox" value="5" onchange="render()">对公认款中</label>
+          <label class="st-cb"><input type="checkbox" value="6" onchange="render()">二维码</label>
+          <label class="st-cb"><input type="checkbox" value="9" onchange="render()">待递交</label>
+          <label class="st-cb"><input type="checkbox" value="2" onchange="render()">待确认</label>
+          <label class="st-cb"><input type="checkbox" value="7" onchange="render()">待补充</label>
+          <label class="st-cb"><input type="checkbox" value="8" onchange="render()">已作废</label>
         </div>
       </div>
-      <div class="filter-item">
-        <span class="filter-label">关键字</span>
-        <input class="filter-input" placeholder="请输入关键字">
-      </div>
-      <div class="actions" style="margin-left:auto">
-        <button class="btn primary" onclick="toast('查询')">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
-          查询
-        </button>
-        <button class="btn" onclick="resetFilter()">重置</button>
+
+      <div class="filter-row">
+        <span class="filter-label">客户公司</span>
+        <input class="filter-input" id="keywordInput" placeholder="请输入客户公司名称" onkeydown="if(event.key==='Enter')doQuery()">
+        <div class="filter-actions">
+          <button class="btn primary" onclick="doQuery()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+            查询
+          </button>
+          <button class="btn" onclick="resetFilter()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+            重置
+          </button>
+        </div>
       </div>
     </div>
 
     <div class="list-head" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
       <div class="table-title">提单消息<span class="num" id="listCount">1</span></div>
+      <div class="refresh-bar">
+        <span class="refresh-hint">点击刷新获取最新消息</span>
+        <button class="refresh-tasks-btn" onclick="refreshTasks()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>刷新</button>
+      </div>
     </div>
     <div id="taskTableWrap"></div>
   </main>
@@ -261,7 +273,15 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
           身份证原图<span class="section-count" id="ocrImgCount"></span>
         </div>
+        <div class="ocr-sel-bar">
+          <label class="ocr-sel-all"><input type="checkbox" id="ocrSelectAll" onchange="ocrToggleAll(this)">全选</label>
+          <button class="btn" id="ocrDownloadBtn" onclick="ocrDownloadSelected()" disabled>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            下载所选<span id="ocrDownloadCount"></span>
+          </button>
+        </div>
         <div class="ocr-thumb-grid" id="ocrThumbList"></div>
+        <div class="ocr-thumb-hint">单击勾选 · 双击查看大图 · 缩略图可直接拖到桌面或其他程序</div>
       </div>
       <div class="ocr-right">
         <div class="ocr-right-head">
@@ -269,10 +289,6 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
             识别结果<span class="cr-tip" id="ocrEditTip">可编辑</span>
           </div>
-          <button class="cr-copy" id="ocrCopyBtn" onclick="ocrCopyResults()" style="display:none">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-            复制结果
-          </button>
           <button class="cr-copy" id="ocrVerifyBtn" onclick="ocrVerify()" style="display:none">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg>
             身份证校验
@@ -284,8 +300,12 @@
     </div>
     <div class="modal-foot">
       <div class="foot-actions">
-        <button class="btn" onclick="closeOcrModal()">关闭</button>
+        <button class="btn" id="ocrCopyBtn" onclick="ocrCopyResults()" style="display:none">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          复制结果
+        </button>
         <button class="btn primary" id="ocrActionBtn" onclick="ocrStart()">开始识别</button>
+        <button class="btn" onclick="closeOcrModal()">关闭</button>
       </div>
     </div>
   </div>

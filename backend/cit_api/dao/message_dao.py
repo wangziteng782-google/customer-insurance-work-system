@@ -1,4 +1,4 @@
-from sqlalchemy import func
+from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
 from cit_api.model.model import ChatMessage, InsuranceTask, TaskComment, User
@@ -27,6 +27,34 @@ class ChatMessageDAO:
         return msg
 
     @staticmethod
+    def get(db: Session, message_id: int) -> ChatMessage | None:
+        """按主键获取单条消息"""
+        return db.get(ChatMessage, message_id)
+
+    @staticmethod
+    def delete_within_window(db: Session, message_id: int, user_id: int,
+                             window_seconds: int) -> int:
+        """撤回消息（物理删除），返回受影响行数
+
+        时间窗判定放在 SQL 里：created_at 由数据库 now() 写入，用同一个时钟比较，
+        避免应用与数据库之间的时钟/时区漂移。返回 0 表示已超出时间窗
+        （存在性、归属由上层预先校验）。
+
+        只删消息行，不刷新 insurance_tasks.updated_at，
+        否则"撤回一下"会让任务跳到列表最前。
+        """
+        return (
+            db.query(ChatMessage)
+            .filter(
+                ChatMessage.id == message_id,
+                ChatMessage.user_id == user_id,
+                ChatMessage.created_at
+                >= func.now() - text(f"INTERVAL {window_seconds} SECOND"),
+            )
+            .delete(synchronize_session=False)
+        )
+
+    @staticmethod
     def list_by_task(db: Session, task_id: str) -> list[ChatMessage]:
         return (
             db.query(ChatMessage)
@@ -36,11 +64,35 @@ class ChatMessageDAO:
         )
 
     @staticmethod
+    def _order_by_last_message(db: Session, query):
+        """按「该任务最新一条消息的发送时间」排序（没有消息则退回任务创建时间）
+
+        为什么不用 updated_at：内勤改状态(做单/递交/退回)会刷新 updated_at 但不新增消息，
+        用 updated_at 排会导致"只改了状态的任务"也跳到新位置。
+        用消息时间排序可保证：只有客服真的发了新消息，顺序才变化。
+        第二排序键用 id，避免同一秒内多条任务顺序不稳定。
+        """
+        last_msg = (
+            db.query(
+                ChatMessage.task_id.label("task_id"),
+                func.max(ChatMessage.created_at).label("last_msg_at"),
+            )
+            .group_by(ChatMessage.task_id)
+            .subquery()
+        )
+        return (
+            query.outerjoin(last_msg, last_msg.c.task_id == InsuranceTask.task_id)
+            .order_by(
+                func.coalesce(last_msg.c.last_msg_at, InsuranceTask.created_at).asc(),
+                InsuranceTask.id.asc(),
+            )
+        )
+
+    @staticmethod
     def list_tasks(db: Session, skip: int = 0, limit: int = 50) -> list[dict]:
         """获取任务列表（直接从 insurance_tasks 查）"""
         tasks = (
-            db.query(InsuranceTask)
-            .order_by(InsuranceTask.updated_at.asc())
+            ChatMessageDAO._order_by_last_message(db, db.query(InsuranceTask))
             .offset(skip)
             .limit(limit)
             .all()
@@ -80,24 +132,32 @@ class ChatMessageDAO:
 
     @staticmethod
     def list_companies(db: Session) -> list[dict]:
-        """获取保险公司列表（名称 + 任务数 + 人员）"""
-        from sqlalchemy import func
-        tasks = (
+        """获取保险公司列表（名称 + 任务数 + 人员 + 各任务更新时间）
+
+        task_times 是给内勤页侧栏算"未读红点"用的：红点要和浏览器里的
+        seen_<任务id> 逐条比对，只返回 count 是算不出来的。
+        带上它之后，侧栏 15s 轮询这个轻量接口就能刷新红点，
+        不必再拉全量任务（那份数据里嵌了每个任务的消息和附件，很重）。
+        """
+        rows = (
             db.query(
                 InsuranceTask.insurance_company,
-                func.count(InsuranceTask.id).label("count"),
                 InsuranceTask.creator,
+                InsuranceTask.task_id,
+                InsuranceTask.updated_at,
             )
-            .group_by(InsuranceTask.insurance_company, InsuranceTask.creator)
             .all()
         )
         companies: dict[str, dict] = {}
-        for company, count, creator in tasks:
-            if company not in companies:
-                companies[company] = {"name": company, "count": 0, "users": set()}
-            companies[company]["count"] += count
+        for company, creator, task_id, updated_at in rows:
+            c = companies.setdefault(
+                company,
+                {"name": company, "count": 0, "users": set(), "task_times": []},
+            )
+            c["count"] += 1
             if creator:
-                companies[company]["users"].add(creator)
+                c["users"].add(creator)
+            c["task_times"].append({"id": task_id, "updated_at": updated_at})
         result = []
         for c in companies.values():
             c["users"] = list(c["users"])
@@ -106,12 +166,51 @@ class ChatMessageDAO:
         return result
 
     @staticmethod
+    def list_tasks_by_search(db: Session, search: str, skip: int = 0, limit: int = 50) -> list[dict]:
+        """按客户公司模糊搜索"""
+        tasks = (
+            db.query(InsuranceTask)
+            .filter(InsuranceTask.customer_company.like(f"%{search}%"))
+            .order_by(InsuranceTask.created_at.asc())
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
+        task_ids = [t.task_id for t in tasks]
+        msg_counts: dict[str, int] = {}
+        if task_ids:
+            rows = (
+                db.query(ChatMessage.task_id, func.count(ChatMessage.id))
+                .filter(ChatMessage.task_id.in_(task_ids))
+                .group_by(ChatMessage.task_id)
+                .all()
+            )
+            msg_counts = {r[0]: r[1] for r in rows}
+        return [
+            {
+                "task_id": t.task_id,
+                "status": t.status,
+                "business_type": t.business_type,
+                "insurance_company": t.insurance_company,
+                "customer_company": t.customer_company,
+                "creator": t.creator,
+                "user_id": t.user_id,
+                "operator": t.operator,
+                "operator_id": t.operator_id,
+                "msg_count": msg_counts.get(t.task_id, 0),
+                "created_at": t.created_at,
+                "updated_at": t.updated_at,
+            }
+            for t in tasks
+        ]
+
+    @staticmethod
     def list_tasks_by_user(db: Session, user_id: int, skip: int = 0, limit: int = 50) -> list[dict]:
         """按用户获取任务列表（PySide 专用）"""
         tasks = (
-            db.query(InsuranceTask)
-            .filter(InsuranceTask.user_id == user_id)
-            .order_by(InsuranceTask.updated_at.asc())
+            ChatMessageDAO._order_by_last_message(
+                db, db.query(InsuranceTask).filter(InsuranceTask.user_id == user_id)
+            )
             .offset(skip)
             .limit(limit)
             .all()
@@ -149,9 +248,12 @@ class ChatMessageDAO:
         """按保险公司获取任务列表"""
         from sqlalchemy import func
         tasks = (
-            db.query(InsuranceTask)
-            .filter(InsuranceTask.insurance_company == company)
-            .order_by(InsuranceTask.updated_at.asc())
+            ChatMessageDAO._order_by_last_message(
+                db,
+                db.query(InsuranceTask).filter(
+                    InsuranceTask.insurance_company == company
+                ),
+            )
             .offset(skip)
             .limit(limit)
             .all()

@@ -55,7 +55,7 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
-import { INSURANCE_COMPANIES } from "../constants";
+import { listDropdowns } from "../api";
 
 const emit = defineEmits(["close", "confirm"]);
 
@@ -65,12 +65,23 @@ const policyType = ref(1);
 const error = ref("");
 const companyOpen = ref(false);
 const companyInput = ref(null);
+const companyList = ref([]); // 从后端获取
 
-/** 过滤：包含匹配（对齐 PySide completer MatchContains），空输入显示全部 */
+// 启动时从后端拉取保险公司列表（选项存在数据库，由有权限的人在管理页维护）
+onMounted(async () => {
+  try {
+    companyList.value = await listDropdowns("insurance_company");
+  } catch (e) {
+    // 拿不到列表就无法通过"选项必须在列表中"的校验，必须明确提示而不是静默留空
+    error.value = `保险公司列表加载失败（${e.message}），请检查网络后重试`;
+  }
+});
+
+/** 过滤：包含匹配，空输入显示全部 */
 const filteredCompanies = computed(() => {
   const kw = company.value.trim();
-  if (!kw) return INSURANCE_COMPANIES;
-  return INSURANCE_COMPANIES.filter((c) => c.includes(kw));
+  if (!kw) return companyList.value.map((o) => o.value);
+  return companyList.value.filter((o) => o.value.includes(kw)).map((o) => o.value);
 });
 
 function selectCompany(c) {
@@ -80,7 +91,14 @@ function selectCompany(c) {
 
 function onConfirm() {
   if (!company.value) {
-    error.value = "请选择或输入保险公司";
+    error.value = "请选择保险公司";
+    companyInput.value?.focus();
+    return;
+  }
+  // 校验必须在已有列表中
+  const exists = companyList.value.some((o) => o.value === company.value);
+  if (!exists) {
+    error.value = "保险公司不在列表中，请选择已有选项";
     companyInput.value?.focus();
     return;
   }

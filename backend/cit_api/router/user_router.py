@@ -15,7 +15,8 @@ def list_users(db: Session = Depends(get_db)):
     """获取用户列表（需要登录）"""
     users = db.query(User).all()
     return [
-        {"id": u.id, "username": u.username, "display_name": u.display_name, "role": u.role}
+        {"id": u.id, "username": u.username, "display_name": u.display_name,
+         "role": u.role, "can_manage_dropdowns": bool(u.can_manage_dropdowns)}
         for u in users
     ]
 
@@ -43,6 +44,7 @@ def login(
         "username": user.username,
         "display_name": user.display_name,
         "role": user.role,
+        "can_manage_dropdowns": bool(user.can_manage_dropdowns),
         "token": make_token(user.id),
     }
 

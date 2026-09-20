@@ -54,8 +54,8 @@
               {{ taskTypeLabel(task.business_type) }}
             </div>
             <div class="card-row3">
-              <span class="time">{{
-                fmtDateTime(task.updated_at || task.created_at)
+              <span class="time" :title="`创建：${fmtDateTime(task.created_at)}`">{{
+                fmtDateTime(cardTime(task))
               }}</span>
               <span class="msg-count">{{ task.msg_count || 0 }} 条</span>
             </div>
@@ -133,7 +133,7 @@ function markSeen(taskId) {
   }
 }
 
-/** 任务最后活动时间：updated_at 与消息/留言时间的最大值 */
+/** 任务最后活动时间：updated_at 与消息/留言时间的最大值（用于未读判断） */
 function lastActivity(task) {
   let latest = String(task.updated_at || task.created_at || "");
   for (const m of task.messages || []) {
@@ -143,6 +143,15 @@ function lastActivity(task) {
     if (c.created_at && String(c.created_at) > latest) latest = String(c.created_at);
   }
   return latest;
+}
+
+/** 卡片展示的时间：最新一条消息的时间（与后端排序键一致，无消息退回更新时间/创建时间） */
+function cardTime(task) {
+  let latest = "";
+  for (const m of task.messages || []) {
+    if (m.created_at && String(m.created_at) > latest) latest = String(m.created_at);
+  }
+  return latest || task.updated_at || task.created_at || "";
 }
 
 function isUnread(task) {

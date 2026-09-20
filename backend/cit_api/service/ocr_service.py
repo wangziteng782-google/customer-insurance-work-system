@@ -135,7 +135,6 @@ def _expand_scientific_notation(text):
 
 
 _NAME_PATTERN = re.compile(r'姓名[\s　:：\n\r]*(\S{2,4})')
-_NAME_PATTERN_ALT = re.compile(r'名[\s　:：\n\r]+([一-鿿]{2,4})')
 _NAME_FALLBACK_PATTERN = re.compile(r'([一-鿿]{2,4})')
 
 _ADDRESS_KEYWORDS = set('镇村省市县区乡号路街道组栋楼室弄巷坊屯')
@@ -159,7 +158,12 @@ def _is_valid_name(candidate):
         return False
     if candidate in _ID_NOISE_VALUES:
         return False
-    if any(kw in candidate for kw in ('性别', '民族', '出生', '签发', '期限', '公民', '身份证', '居民')):
+    if any(kw in candidate for kw in ('姓名', '性别', '民族', '出生', '签发', '期限', '公民', '身份证', '居民')):
+        return False
+    # ponytail: 地址字黑名单式过滤，专治"住址续行被当成姓名"（河北省邯郸市邱县 → 河北省邯）
+    # 取舍：姓名本身含地址字（如"路遥"）会被留空，交给内勤手填——宁可漏，不可误收
+    # 天花板：若出现不含地址字的误判（如公司名），再引入 address_text 交集判断
+    if any(kw in candidate for kw in _ADDRESS_KEYWORDS):
         return False
     return True
 
@@ -500,3 +504,21 @@ def recognize_id_card(image_url: str):
         "age": calculate_age(birth_date),
         "area": get_area_info(id_number),
     }, None
+
+
+# ── 自检：只验证姓名/身份证号提取规则，不需要 OCR 引擎 ──
+# 运行：cd backend && python -m cit_api.service.ocr_service
+
+if __name__ == "__main__":
+    _CARD = ("姓名 王五\n性别 男 民族 汉\n出生 2003年1月22日\n"
+             "住址 河北省邯郸市邱县\n公民身份号码 13043120030122123X")
+    assert extract_id_info(_CARD) == ("王五", "13043120030122123X")
+    # 姓名与标签粘连
+    assert extract_id_info("姓名张三\n13043120030122123X") == ("张三", "13043120030122123X")
+    # 回归：住址续行不得被当成姓名（修复前会得到 "河北省邯"）
+    assert extract_id_info("住址\n河北省邯郸市邱县\n13043120030122123X")[0] == ""
+    # 无姓名 → 留空，只保留号码
+    assert extract_id_info("13043120030122123X")[0] == ""
+    # 科学计数法还原后的号码仍要提取到
+    assert extract_id_info("号码 1.30431200301221E+17")[1] == "130431200301221000"
+    print("extract_id_info self-check passed")

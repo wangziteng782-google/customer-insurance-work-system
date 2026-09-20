@@ -16,7 +16,11 @@
       </HistoryPanel>
 
       <!-- 右栏：聊天面板 -->
-      <ChatPanel ref="chatRef" @task-created="onTaskCreated" />
+      <ChatPanel
+        ref="chatRef"
+        @task-created="onTaskCreated"
+        @task-changed="onTaskChanged"
+      />
     </div>
 
     <!-- 修改密码对话框 -->
@@ -70,6 +74,11 @@ function onHistoryItemClick(task) {
 function onTaskCreated(taskId) {
   if (taskId) historyRef.value?.markSeen(taskId);
   historyRef.value?.resetAndRefresh();
+}
+
+/** 消息被撤回 — 静默刷新左侧列表（保留选中与页码） */
+function onTaskChanged() {
+  historyRef.value?.refresh();
 }
 
 /** 修改密码 */

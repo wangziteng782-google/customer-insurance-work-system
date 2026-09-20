@@ -7,11 +7,12 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from cit_api.database import engine
-from cit_api.model.model import Base, ChatMessage  # noqa: F401  -- 确保模型被注册
+from cit_api.model.model import Base, ChatMessage, DropdownOption  # noqa: F401  -- 确保模型被注册
 from cit_api.router.ai_router import router as ai_router
 from cit_api.router.message_router import router as message_router
 from cit_api.router.user_router import router as user_router
 from cit_api.router.ocr_router import router as ocr_router
+from cit_api.router.dropdown_router import router as dropdown_router
 
 # 启动时建表（开发期使用，生产建议用 Alembic 迁移）
 Base.metadata.create_all(bind=engine)
@@ -39,6 +40,7 @@ app.include_router(ai_router)
 app.include_router(message_router)
 app.include_router(user_router)
 app.include_router(ocr_router)
+app.include_router(dropdown_router)
 
 
 @app.exception_handler(RequestValidationError)

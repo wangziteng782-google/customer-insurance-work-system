@@ -8,6 +8,9 @@ from cit_api.model.model import InsuranceTask, User
 # 允许留言的任务状态：待确认(2) / 待补充(7)
 COMMENTABLE_STATUSES = (2, 7)
 
+# 撤回时间窗（秒）：发送后超过该时长不可撤回（对齐微信的 2 分钟）
+RECALL_WINDOW_SECONDS = 120
+
 
 class ChatMessageService:
     """聊天记录业务逻辑层"""
@@ -36,6 +39,28 @@ class ChatMessageService:
         )
         msg = self.dao.create(self.db, dto)
         return ChatMessageOutDTO.model_validate(msg)
+
+    def recall(self, message_id: int, user: User) -> dict:
+        """撤回消息：仅限本人发送、且发送未超过 RECALL_WINDOW_SECONDS
+
+        物理删除：删掉后所有下游（消息列表 / 消息计数 / 内勤页 / PySide / AI 识别）
+        自动不再返回该条，无需任何额外过滤逻辑。
+        """
+        msg = self.dao.get(self.db, message_id)
+        if not msg:
+            raise HTTPException(404, "消息不存在")
+        if msg.user_id != user.id:
+            raise HTTPException(403, "只能撤回自己发送的消息")
+
+        task_id = msg.task_id
+        # 时间窗判定与删除在同一条 SQL 内完成，避免"查完再删"的竞态
+        deleted = self.dao.delete_within_window(
+            self.db, message_id, user.id, RECALL_WINDOW_SECONDS
+        )
+        self.db.commit()
+        if not deleted:
+            raise HTTPException(403, "超过 2 分钟，无法撤回")
+        return {"id": message_id, "task_id": task_id, "recalled": True}
 
     def _get_user_names(self, user_ids: list[int]) -> dict[int, str]:
         """批量获取用户显示名"""
@@ -74,6 +99,23 @@ class ChatMessageService:
     def list_companies(self) -> list[dict]:
         """获取保险公司列表（侧栏用）"""
         return self.dao.list_companies(self.db)
+
+    def list_tasks_by_search(self, search: str, skip: int = 0, limit: int = 50) -> list[ChatTaskOutDTO]:
+        """按客户公司模糊搜索"""
+        tasks = self.dao.list_tasks_by_search(self.db, search, skip, limit)
+        task_ids = [t['task_id'] for t in tasks]
+        msg_map = self.dao.list_messages_batch(self.db, task_ids)
+        comment_map = self.dao.list_comments_batch(self.db, task_ids)
+        user_ids = list({t['user_id'] for t in tasks if t.get('user_id')})
+        name_map = self._get_user_names(user_ids)
+        result = []
+        for t in tasks:
+            dto = ChatTaskOutDTO(**t)
+            dto.creator_name = name_map.get(t.get('user_id')) or t.get('creator')
+            dto.messages = [ChatMessageOutDTO.model_validate(m) for m in msg_map.get(t['task_id'], [])]
+            dto.comments = [TaskCommentDTO.model_validate(c) for c in comment_map.get(t['task_id'], [])]
+            result.append(dto)
+        return result
 
     def list_tasks_by_user(self, user_id: int, skip: int = 0, limit: int = 50) -> list[ChatTaskOutDTO]:
         """按用户获取任务列表（PySide 专用）"""

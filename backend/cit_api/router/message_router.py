@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from cit_api.database import get_db
 from cit_api.dto.message_dto import ChatMessageCreateDTO, ChatMessageOutDTO, ChatTaskOutDTO, TaskCommentDTO, StatusUpdateDTO
 from cit_api.service.message_service import ChatMessageService
+from cit_api.model.model import User
 from cit_api.util.qiniu import upload_file
 from cit_api.auth import get_current_user
 from pydantic import BaseModel
@@ -30,6 +31,16 @@ def list_messages(task_id: str, db: Session = Depends(get_db)):
     return ChatMessageService(db).list_by_task(task_id)
 
 
+@router.delete("/messages/{message_id}")
+def recall_message(
+    message_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """撤回消息（物理删除，仅限本人发送且 2 分钟内）"""
+    return ChatMessageService(db).recall(message_id, user)
+
+
 @router.get("/companies")
 def list_companies(db: Session = Depends(get_db)):
     """获取保险公司列表（侧栏用）"""
@@ -43,9 +54,11 @@ def list_my_tasks(user_id: int, skip: int = 0, limit: int = 50, db: Session = De
 
 
 @router.get("/tasks", response_model=list[ChatTaskOutDTO])
-def list_tasks(company: str = None, skip: int = 0, limit: int = 50, db: Session = Depends(get_db)):
-    """获取任务列表，可按保险公司筛选"""
+def list_tasks(company: str = None, search: str = None, skip: int = 0, limit: int = 50, db: Session = Depends(get_db)):
+    """获取任务列表，支持按保险公司筛选和客户公司搜索"""
     svc = ChatMessageService(db)
+    if search:
+        return svc.list_tasks_by_search(search, skip, limit)
     if company:
         return svc.list_tasks_by_company(company, skip, limit)
     return svc.list_tasks(skip, limit)
@@ -70,8 +83,8 @@ async def upload_files(
         if ext not in ALLOWED_EXTS:
             raise HTTPException(400, f"不支持的文件类型：{ext}")
 
-        # 上传到七牛云
-        url = upload_file(task_id, content, ext)
+        # 上传到七牛云（带上原始文件名，便于识别与下载）
+        url = upload_file(task_id, content, ext, file.filename or "")
         saved_paths.append(url)
 
     return {"file_paths": saved_paths}

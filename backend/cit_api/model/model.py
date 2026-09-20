@@ -58,4 +58,15 @@ class User(Base):
     phone = Column(String(20), nullable=True, comment="手机号")
     password = Column(String(100), nullable=True, comment="密码（bcrypt哈希）")
     role = Column(Integer, default=1, comment="0管理员/1客服(提单人)/2内勤(做单人)")
+    can_manage_dropdowns = Column(TINYINT, default=0, comment="可管理下拉选项")
     created_at = Column(DateTime, server_default=func.now())
+
+
+class DropdownOption(Base):
+    """下拉选项表"""
+    __tablename__ = "dropdown_options"
+
+    id       = Column(BigInteger, primary_key=True, autoincrement=True)
+    category = Column(String(30), nullable=False, comment="分类标识")
+    value    = Column(String(100), nullable=False, comment="选项值")
+    sort     = Column(Integer, default=0, comment="排序")

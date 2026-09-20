@@ -23,3 +23,9 @@ def get_current_user(
     if not user:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "用户不存在")
     return user
+
+
+def require_dropdown_admin(user: User = Depends(get_current_user)):
+    if not user.can_manage_dropdowns:
+        raise HTTPException(403, "无权限管理下拉选项")
+    return user
