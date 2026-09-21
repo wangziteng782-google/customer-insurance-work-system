@@ -1,3 +1,5 @@
+from datetime import date
+
 from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
@@ -206,11 +208,21 @@ class ChatMessageDAO:
 
     @staticmethod
     def list_tasks_by_user(db: Session, user_id: int, skip: int = 0, limit: int = 50) -> list[dict]:
-        """按用户获取任务列表（PySide 专用）"""
-        tasks = (
-            ChatMessageDAO._order_by_last_message(
-                db, db.query(InsuranceTask).filter(InsuranceTask.user_id == user_id)
+        """按用户获取任务列表（桌面端专用），隐藏非今天的已递交(4)/对公认款中(5）"""
+        _HIDE_STATUS = (4, 5)
+        _today = date.today().isoformat()
+        _q = db.query(InsuranceTask).filter(InsuranceTask.user_id == user_id)
+        # 隐藏条件：状态 in (4,5) 且 created_at 存在且不是今天
+        # created_at 为 NULL 的任务不隐藏（兜底保留）
+        _q = _q.filter(
+            ~(
+                InsuranceTask.status.in_(_HIDE_STATUS)
+                & (InsuranceTask.created_at != None)
+                & (func.date(InsuranceTask.created_at) != _today)
             )
+        )
+        tasks = (
+            ChatMessageDAO._order_by_last_message(db, _q)
             .offset(skip)
             .limit(limit)
             .all()
