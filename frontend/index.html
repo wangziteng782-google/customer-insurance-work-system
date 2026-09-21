@@ -25,6 +25,13 @@
     <div class="company-list">
       <!-- 动态生成：由 renderSidebar() 根据任务数据渲染 -->
     </div>
+    <!-- 下拉选项管理入口：默认隐藏，由 app.js 按 can_manage_dropdowns 显示 -->
+    <div id="dropdownManageBtn" style="display:none;padding:10px 16px;border-top:1px solid var(--line)">
+      <button class="btn" style="width:100%;height:30px;font-size:var(--fs-xs);color:var(--gray-500)" onclick="openDropdownManage()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><path d="M12 5v14M5 12h14"/></svg>
+        下拉选项管理
+      </button>
+    </div>
   </aside>
 
   <main class="main">
@@ -172,6 +179,31 @@
       <div class="foot-actions">
         <button class="btn" onclick="closePasswordModal()">取消</button>
         <button class="btn primary" onclick="submitPassword()">确认修改</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 下拉选项管理弹窗（仅 can_manage_dropdowns=1 的账号可打开） -->
+<div class="modal-mask" id="dropdownManageMask" style="display:none">
+  <div class="modal" style="width:min(520px,94vw)">
+    <div class="modal-head">
+      <div>
+        <div class="modal-title">下拉选项管理</div>
+        <div class="modal-sub" id="dropdownManageSub">保险公司</div>
+      </div>
+      <button class="close" onclick="closeDropdownManage()">×</button>
+    </div>
+    <div class="modal-body">
+      <div style="display:flex;gap:8px;margin-bottom:14px">
+        <input class="filter-input" id="dropdownNewValue" placeholder="新增选项名称" onkeydown="if(event.key==='Enter')doAddDropdown()" style="flex:1;margin:0">
+        <button class="btn primary" onclick="doAddDropdown()">添加</button>
+      </div>
+      <div id="dropdownManageList" style="display:flex;flex-direction:column;gap:6px;max-height:360px;overflow:auto"></div>
+    </div>
+    <div class="modal-foot">
+      <div class="foot-actions">
+        <button class="btn" onclick="closeDropdownManage()">关闭</button>
       </div>
     </div>
   </div>

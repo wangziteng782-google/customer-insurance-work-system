@@ -471,16 +471,36 @@ def get_engine():
     return _engine
 
 
+# 七牛图片处理：识别不需要原图，1600 长边足够（PaddleOCR 内部还会再缩放）
+# auto-orient 必须带：七牛处理完会丢掉 EXIF 方向，不先转正，手机竖拍的照片是躺着的，识别率会掉
+# 实测 11MB 原图 → 0.5MB，下载 4.5s → ~1s（也顺带解决了 timeout=10 容易超时失败的问题）
+_OCR_IMG_FOP = "imageMogr2/auto-orient/thumbnail/1600x>"
+
+
+def _fetch_for_ocr(image_url: str) -> bytes:
+    """取识别用的图片字节：优先七牛处理后的 1600 版本，不可用则回退原图"""
+    import requests as _req
+
+    sep = "&" if "?" in image_url else "?"
+    try:
+        resp = _req.get(image_url + sep + _OCR_IMG_FOP, timeout=20)
+        if resp.status_code == 200 and resp.content:
+            return resp.content
+    except Exception:
+        pass  # 桶没开图片处理 / 网络抖动 → 走原图
+    resp = _req.get(image_url, timeout=30)
+    resp.raise_for_status()
+    return resp.content
+
+
 def recognize_id_card(image_url: str):
     """下载图片并识别身份证 — 主入口"""
-    import requests as _req
-    from PIL import Image as PILImage
+    from PIL import Image as PILImage, ImageOps
     import numpy as np
 
-    resp = _req.get(image_url, timeout=10)
-    resp.raise_for_status()
-
-    image = PILImage.open(__import__('io').BytesIO(resp.content))
+    image = PILImage.open(__import__('io').BytesIO(_fetch_for_ocr(image_url)))
+    # 原图可能带 EXIF 方向（手机竖拍），PIL 不会自动转正
+    image = ImageOps.exif_transpose(image)
     if image.mode != 'RGB':
         image = image.convert('RGB')
 

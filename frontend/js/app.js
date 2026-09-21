@@ -652,7 +652,7 @@ function runCardOCR(i) {
   ocrImages = imgWithTime;
   ocrSelected = new Set();
   renderOcrThumbs();
-  ocrPrefetchFiles(); // 后台预取二进制，拖拽时才能交出"真实文件"
+  ocrFiles = {}; // 清掉上一个任务的预取结果；勾选后才按需预取（见 ocrPrefetchSelected）
   document.getElementById("ocrVerifyTip").style.display = "none";
   // 该任务之前识别过 → 回显上次结果；只有点「重新识别」才会覆盖
   const cached = ocrGetCached(t.id);
@@ -686,10 +686,11 @@ let viewerRot = 0;
 function openImgViewer(src, tag) {
   viewerRot = 0;
   const img = document.getElementById("imgViewerSrc");
-  img.src = src;
+  // 展示用 1600 版本（原图 11MB 要等 4.5s）；下载链接仍指向原图
+  img.src = qiniuImg(src, VIEW_WIDTH);
   img.style.transform = "rotate(0deg)";
   document.getElementById("imgViewerTag").textContent = tag || "";
-  // 设置下载链接
+  // 设置下载链接（原图）
   const dl = document.getElementById("imgViewerDl");
   dl.href = src;
   dl.download = (tag || "image") + ".jpg";
@@ -702,6 +703,16 @@ function viewerRotate() {
 function closeImgViewer() { document.getElementById("imgViewer").classList.remove("show"); }
 
 // ── 缩略图：勾选 / 全选 / 拖拽 / 批量下载 ──
+
+/**
+ * 七牛图片处理 URL：把原图换成长边受限的版本（原图只留给下载和拖拽）
+ * auto-orient 必须带 —— 七牛处理完会丢掉 EXIF 方向，不先转正，竖拍照片在缩略图里是躺着的
+ * ponytail: 每张图首次请求要走 fop 生成（实测约 1.4s），之后 CDN 缓存命中；
+ *           量大了再到七牛控制台把这些尺寸存成命名样式，URL 更短
+ */
+const qiniuImg = (url, width) => `${url}?imageMogr2/auto-orient/thumbnail/${width}x>`;
+const THUMB_WIDTH = 400; // 缩略图宽度
+const VIEW_WIDTH = 1600; // 双击看大图的宽度
 
 function renderOcrThumbs() {
   const list = document.getElementById("ocrThumbList");
@@ -722,7 +733,7 @@ function renderOcrThumbs() {
         ondblclick="openImgViewer('${item.url}','图片 ${k+1}')"
         title="单击勾选 · 双击查看大图 · 可直接拖拽">
       <span class="ocr-check">✓</span>
-      ${imgNew}<img src="${item.url}" alt="图片 ${k+1}" draggable="false" onerror="this.style.display='none'">
+      ${imgNew}<img src="${qiniuImg(item.url, THUMB_WIDTH)}" loading="lazy" decoding="async" alt="图片 ${k+1}" draggable="false" onerror="this.style.display='none'">
       <div class="ocr-thumb-label">图片 ${k+1}</div>
     </div>`;
   }).join("");
@@ -730,13 +741,16 @@ function renderOcrThumbs() {
 }
 
 // 后台预取图片二进制：拖拽时能交出真实 File（拖到文件夹会直接落文件，且支持多张）
-// 缩略图已加载过同样的 URL，这里基本命中浏览器缓存，开销很小
-async function ocrPrefetchFiles() {
-  const snapshot = ocrImages;
-  ocrFiles = {};
-  for (let k = 0; k < snapshot.length; k++) {
+// 只取「已勾选」的那几张 —— 打开弹窗就把所有原图整份下下来会把带宽占满，
+// 结果缩略图反而更慢（这是之前"图片加载特别慢"的主因）
+const ocrPrefetching = new Set();
+async function ocrPrefetchSelected() {
+  for (const k of [...ocrSelected]) {
+    const item = ocrImages[k];
+    if (!item || ocrFiles[k] || ocrPrefetching.has(k)) continue;
+    ocrPrefetching.add(k);
     try {
-      const resp = await fetch(snapshot[k].url);
+      const resp = await fetch(item.url); // 原图：拖出去的就是原件
       if (!resp.ok) continue;
       const blob = await resp.blob();
       ocrFiles[k] = new File([blob], `图片${k + 1}.jpg`, {
@@ -744,6 +758,8 @@ async function ocrPrefetchFiles() {
       });
     } catch {
       /* 跨域或网络失败：拖拽时退回 DownloadURL 方式 */
+    } finally {
+      ocrPrefetching.delete(k);
     }
   }
 }
@@ -765,12 +781,19 @@ function updateOcrSelBar() {
 function ocrToggleSelect(k) {
   if (ocrSelected.has(k)) ocrSelected.delete(k);
   else ocrSelected.add(k);
-  renderOcrThumbs();
+  // 只切样式，不重建 DOM —— 重建会让所有 <img> 重新发起请求、并闪一下
+  document.getElementById(`ocrThumb-${k}`)?.classList.toggle("sel", ocrSelected.has(k));
+  updateOcrSelBar();
+  ocrPrefetchSelected();
 }
 
 function ocrToggleAll(el) {
   ocrSelected = el.checked ? new Set(ocrImages.map((_, k) => k)) : new Set();
-  renderOcrThumbs();
+  ocrImages.forEach((_, k) => {
+    document.getElementById(`ocrThumb-${k}`)?.classList.toggle("sel", ocrSelected.has(k));
+  });
+  updateOcrSelBar();
+  ocrPrefetchSelected();
 }
 
 // 拖拽缩略图到桌面 / 文件夹 / 微信等
@@ -970,6 +993,110 @@ if (userMenu) {
   document.addEventListener('click', function() {
     userDropdown.classList.remove('show');
   });
+}
+
+// ── 下拉选项管理入口（仅 can_manage_dropdowns=1 可见）──
+
+const DROPDOWN_CATEGORY = 'insurance_company';
+const DROPDOWN_CATEGORY_LABEL = '保险公司';
+
+/**
+ * 是否显示"下拉选项管理"入口
+ * 权限以服务端为准：localStorage 里那份是「登录那一刻」的快照，
+ * 权限刚开通、或换了账号时会过期，所以进页面时用 /api/users 里自己那条刷新一次；
+ * 请求失败（后端没更新/断网）就沿用本地快照，不影响使用
+ */
+async function syncDropdownEntry() {
+  const btn = document.getElementById('dropdownManageBtn');
+  if (!btn) return;
+  const me = JSON.parse(localStorage.getItem('currentUser') || '{}');
+  let allowed = !!me.can_manage_dropdowns;
+  try {
+    const r = await authFetch('/api/users');
+    if (r.ok) {
+      const mine = (await r.json()).find(x => x.id === me.id);
+      if (mine) allowed = !!mine.can_manage_dropdowns;
+    }
+  } catch (e) { /* 后端不可用：沿用本地快照 */ }
+  btn.style.display = allowed ? 'block' : 'none';
+}
+
+syncDropdownEntry();
+
+// ── 下拉选项管理 ──
+
+function openDropdownManage() {
+  userDropdown.classList.remove('show');
+  document.getElementById('dropdownManageSub').textContent = DROPDOWN_CATEGORY_LABEL;
+  document.getElementById('dropdownManageMask').style.display = 'flex';
+  document.getElementById('dropdownNewValue').value = '';
+  loadDropdownList();
+}
+
+function closeDropdownManage() {
+  document.getElementById('dropdownManageMask').style.display = 'none';
+}
+
+function dropdownRow(o) {
+  return `<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border:1px solid var(--line);border-radius:var(--r-sm);background:#fff">
+      <span style="flex:1;min-width:0;font-size:var(--fs-sm);color:var(--gray-800);word-break:break-all">${esc(o.value)}</span>
+      <button class="btn" style="height:26px;padding:0 10px;font-size:var(--fs-xs)" onclick="doDeleteDropdown(${o.id})">删除</button>
+    </div>`;
+}
+
+async function loadDropdownList() {
+  const wrap = document.getElementById('dropdownManageList');
+  wrap.innerHTML = '<div style="padding:12px;color:var(--gray-500);font-size:var(--fs-sm)">加载中…</div>';
+  try {
+    const r = await authFetch(`/api/dropdowns/${DROPDOWN_CATEGORY}`);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const list = await r.json();
+    wrap.innerHTML = list.length
+      ? list.map(dropdownRow).join('')
+      : '<div style="padding:12px;color:var(--gray-500);font-size:var(--fs-sm)">还没有选项，先在上方添加</div>';
+  } catch (e) {
+    wrap.innerHTML = `<div style="padding:12px;color:#f5222d;font-size:var(--fs-sm)">加载失败：${esc(e.message)}</div>`;
+  }
+}
+
+async function doAddDropdown() {
+  const input = document.getElementById('dropdownNewValue');
+  const value = input.value.trim();
+  if (!value) {
+    toast('请输入选项名称');
+    input.focus();
+    return;
+  }
+  try {
+    const fd = new FormData();
+    fd.append('value', value);
+    const r = await authFetch(`/api/dropdowns/${DROPDOWN_CATEGORY}`, { method: 'POST', body: fd });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      toast(err.detail || '添加失败');
+      return;
+    }
+    input.value = '';
+    loadDropdownList();
+    toast('已添加：' + value);
+  } catch (e) {
+    toast('网络错误，添加失败');
+  }
+}
+
+async function doDeleteDropdown(id) {
+  try {
+    const r = await authFetch(`/api/dropdowns/${DROPDOWN_CATEGORY}/${id}`, { method: 'DELETE' });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      toast(err.detail || '删除失败');
+      return;
+    }
+    loadDropdownList();
+    toast('已删除');
+  } catch (e) {
+    toast('网络错误，删除失败');
+  }
 }
 
 // ── 修改密码 ──
