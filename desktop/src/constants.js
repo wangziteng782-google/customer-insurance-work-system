@@ -13,6 +13,7 @@ export const STATUS_MAP = {
   7: { label: "待补充", fg: "#fa541c", bg: "#fff2e8", color: "#fa541c" },
   8: { label: "已作废", fg: "#8c8c8c", bg: "#f5f5f5", color: "#8c8c8c" },
   9: { label: "待递交", fg: "#1677ff", bg: "#e8f4ff", color: "#1677ff" },
+  10: { label: "进行中(修改)", fg: "#fa8c16", bg: "#fff7e6", color: "#fa8c16" },
 };
 
 export const UNKNOWN_STATUS = {

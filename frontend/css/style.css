@@ -147,7 +147,7 @@ h1{font-size:var(--fs-lg);margin:0;padding-left:8px;border-left:3px solid var(--
 .user-initial.u-xc{background:linear-gradient(135deg,#f5a623,#d48806)}
 .user-initial.u-other{background:linear-gradient(135deg,#50c878,#3aa85c)}
 .head-info{display:flex;flex-direction:column;gap:2px}
-.head-row1{display:flex;align-items:center;gap:10px}
+.head-row1{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .head-row1 .name{font-size:var(--fs-md);font-weight:600;color:var(--gray-900)}
 .head-row2{display:flex;align-items:center;gap:4px;color:var(--gray-500);font-size:var(--fs-sm)}
 .head-row2 svg{width:13px;height:13px;color:var(--gray-400)}
@@ -213,6 +213,8 @@ h1{font-size:var(--fs-lg);margin:0;padding-left:8px;border-left:3px solid var(--
 .tag:hover{filter:brightness(.95)}
 .tag::after{content:"▾";font-size:10px;margin-left:2px;opacity:.6}
 .tag-processing{color:var(--blue-600);background:var(--blue-50)}
+/* 进行中(修改)：与进行中同为蓝色系，虚线框区分（outline 不占布局） */
+.tag-mod{color:var(--blue-600);background:var(--blue-50);outline:1px dashed var(--blue-600);outline-offset:-1px}
 .tag-done{color:var(--success);background:var(--success-bg)}
 .tag-error{color:#f5222d;background:#fff1f0}
 .tag-rejected{color:#fff;background:#a8071a}
@@ -447,4 +449,84 @@ h1{font-size:var(--fs-lg);margin:0;padding-left:8px;border-left:3px solid var(--
   font-size: 12px;
   margin-bottom: 12px;
   min-height: 18px;
+}
+
+/* 个人标签管理弹窗：颜色色块 */
+.tag-swatch {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  cursor: pointer;
+  flex: none;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 1px var(--gray-200);
+  transition: transform .15s, box-shadow .15s;
+}
+.tag-swatch:hover {
+  transform: scale(1.15);
+}
+.tag-swatch.on {
+  transform: scale(1.2);
+  box-shadow: 0 0 0 2px #fff, 0 0 0 3px var(--gray-400);
+}
+
+/* 任务卡片底部的个人标签片 */
+.card-tag {
+  position: relative;
+  font-size: var(--fs-md);
+  line-height: 24px;
+  padding: 4px 14px;
+  border-radius: 14px;
+  font-weight: 500;
+  flex: none;
+  cursor: pointer;
+  transition: filter .15s;
+}
+.card-tag:hover {
+  filter: brightness(.92);
+}
+/* 悬浮时右上角出现 ×，点击直接移除 */
+.tag-x {
+  display: none;
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  width: 17px;
+  height: 17px;
+  line-height: 17px;
+  text-align: center;
+  border-radius: 50%;
+  background: var(--gray-600);
+  color: #fff;
+  font-size: 12px;
+  font-style: normal;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .25);
+}
+.card-tag:hover .tag-x {
+  display: block;
+}
+.tag-x:hover {
+  background: #f5222d;
+}
+/* 底部「＋ 标签」按钮：虚线边框提示这是添加操作 */
+.foot-left button.tag-add {
+  border-style: dashed;
+  color: var(--gray-500);
+}
+.foot-left button.tag-add:hover {
+  color: var(--blue);
+}
+
+/* 标签选择弹窗里的标签片 */
+.pick-tag {
+  font-size: var(--fs-sm);
+  padding: 5px 14px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  font-weight: 500;
+  transition: all .15s;
+}
+.pick-tag:hover {
+  filter: brightness(.92);
 }

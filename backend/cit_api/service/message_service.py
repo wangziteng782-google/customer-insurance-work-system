@@ -43,22 +43,30 @@ class ChatMessageService:
     def recall(self, message_id: int, user: User) -> dict:
         """撤回消息：仅限本人发送、且发送未超过 RECALL_WINDOW_SECONDS
 
-        物理删除：删掉后所有下游（消息列表 / 消息计数 / 内勤页 / PySide / AI 识别）
-        自动不再返回该条，无需任何额外过滤逻辑。
+        逻辑删除：只写 recalled_at，消息行保留 —— 客户端要显示"你撤回了一条消息"，
+        发送者还要能「重新编辑」把内容放回输入框。
+        撤回的内容只对发送者可见（见 list_by_task），别人只看到"撤回了"这个事实。
         """
         msg = self.dao.get(self.db, message_id)
         if not msg:
             raise HTTPException(404, "消息不存在")
         if msg.user_id != user.id:
-            raise HTTPException(403, "只能撤回自己发送的消息")
+            # 带上真正的发送者：下次出现这句时一眼能看出是谁发的，不用再猜
+            sender = msg.creator or f"用户{msg.user_id}"
+            raise HTTPException(403, f"该消息由 {sender} 发送，只能撤回自己发送的消息")
+        if msg.recalled_at:
+            raise HTTPException(400, "该消息已撤回")
 
         task_id = msg.task_id
-        # 时间窗判定与删除在同一条 SQL 内完成，避免"查完再删"的竞态
-        deleted = self.dao.delete_within_window(
+        # 时间窗判定与打标记在同一条 SQL 内完成，避免"查完再改"的竞态
+        updated = self.dao.recall_within_window(
             self.db, message_id, user.id, RECALL_WINDOW_SECONDS
         )
+        if updated:
+            # 撤回成功：重算 last_msg_at（排除撤回消息），与撤回标记同一个 commit
+            self.dao.refresh_last_msg_at(self.db, task_id)
         self.db.commit()
-        if not deleted:
+        if not updated:
             raise HTTPException(403, "超过 2 分钟，无法撤回")
         return {"id": message_id, "task_id": task_id, "recalled": True}
 
@@ -69,13 +77,21 @@ class ChatMessageService:
         users = self.db.query(User.id, User.display_name).filter(User.id.in_(user_ids)).all()
         return {uid: name or f"用户{uid}" for uid, name in users}
 
-    def list_by_task(self, task_id: str) -> list[ChatMessageOutDTO]:
+    def list_by_task(self, task_id: str, viewer_id: int | None = None) -> list[ChatMessageOutDTO]:
+        """某任务的全部聊天记录
+
+        viewer_id = 当前请求者：撤回过的消息仍然返回（客户端要渲染撤回提示），
+        但内容与附件只给发送者本人（他要「重新编辑」），其他人拿到空内容。
+        """
         messages = self.dao.list_by_task(self.db, task_id)
         user_ids = list({m.user_id for m in messages if m.user_id})
         name_map = self._get_user_names(user_ids)
         result = []
         for m in messages:
             dto = ChatMessageOutDTO.model_validate(m)
+            if m.recalled_at and m.user_id != viewer_id:
+                dto.content = ""
+                dto.file_paths = None
             dto.creator_name = name_map.get(m.user_id) or m.creator
             result.append(dto)
         return result

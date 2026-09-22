@@ -23,13 +23,13 @@ const STATUS_TO_INT = {
 const STATUS_LABELS = {
   0: "待处理", 1: "进行中", 2: "打回·待确认", 3: "已做单",
   4: "已递交", 5: "对公认款中", 6: "二维码", 7: "打回·待补充",
-  8: "已作废", 9: "待递交"
+  8: "已作废", 9: "待递交", 10: "进行中(修改)"
 };
 
 const STATUS_CSS = {
   0: "tag-muted", 1: "tag-processing", 2: "tag-error", 3: "tag-done",
   4: "tag-teal", 5: "tag-orange", 6: "tag-purple", 7: "tag-rejected",
-  8: "tag-muted", 9: "tag-indigo"
+  8: "tag-muted", 9: "tag-indigo", 10: "tag-mod"
 };
 
 const TYPE_LABELS = { 1: "新投", 2: "批改" };
@@ -50,6 +50,7 @@ const ICONS = {
   img: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>',
   search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>',
   file: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>',
+  tag: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.83z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>',
 };
 
 // ── API 对接 ──
@@ -78,7 +79,23 @@ async function loadTasks(company, search) {
   allTasks = (company && company !== '全部')
     ? normalized.filter(t => t._insuranceCompany === company)
     : normalized;
-  await loadCompanies();
+  await Promise.all([loadCompanies(), loadTagBindings()]);
+}
+
+// 当前用户全部任务标签绑定：taskId -> [{tt_id, tag_id, name, color}]
+let tagBindings = new Map();
+
+async function loadTagBindings() {
+  try {
+    const r = await authFetch('/api/tags/bindings');
+    if (!r.ok) throw new Error();
+    const list = await r.json();
+    tagBindings = new Map();
+    list.forEach(b => {
+      if (!tagBindings.has(b.task_id)) tagBindings.set(b.task_id, []);
+      tagBindings.get(b.task_id).push(b);
+    });
+  } catch { tagBindings = new Map(); }
 }
 
 async function loadUsers() {
@@ -175,11 +192,11 @@ function isUnreadOf(id, updatedAt) {
 }
 
 function isUnread(task) {
-  return isUnreadOf(task.id, task.updated_at);
+  return isUnreadOf(task.id, task.lastMsgAt);
 }
 
 function markSeen(task) {
-  if (task.updated_at) localStorage.setItem('seen_' + task.id, task.updated_at);
+  if (task.lastMsgAt) localStorage.setItem('seen_' + task.id, task.lastMsgAt);
 }
 
 async function refreshTasks() {
@@ -206,13 +223,14 @@ function markTaskSeen(i) {
   if (!isUnread(t)) return;
   markSeen(t);
   render();
+  renderSidebar();
 }
 
 function companyHasUnread(company) {
   // 优先用 /api/chat/companies 的 task_times：侧栏 15s 轻量轮询这个接口时红点也能刷新
   const c = allCompanies.find(x => x.name === company);
   if (c && Array.isArray(c.task_times)) {
-    return c.task_times.some(x => isUnreadOf(x.id, x.updated_at));
+    return c.task_times.some(x => isUnreadOf(x.id, fmtTs(x.last_msg_at)));
   }
   // 兼容没有 task_times 的接口：退回已加载的全量任务数据
   return allAllTasks.some(t => (t._insuranceCompany || t.insurance_company) === company && isUnread(t));
@@ -337,6 +355,10 @@ function render() {
     const unreadDot = isUnread(t)
       ? '<i class="unread-dot card" title="有新的提单消息"></i>'
       : "";
+    // 个人标签片（底部）：点击打开选择弹窗，悬浮右上角 × 直接移除
+    const tagChips = (tagBindings.get(t.id) || []).map(b =>
+      `<span class="card-tag" style="background:${b.color}1a;color:${b.color}" onclick="openTagPicker(event, ${i})">${esc(b.name)}<i class="tag-x" title="移除标签" onclick="removeTaskTag(event, ${i}, ${b.tag_id})">×</i></span>`
+    ).join('');
     return `
     <div class="task-item">
       ${unreadDot}
@@ -365,7 +387,7 @@ function render() {
           <button class="detail-btn" onclick="openModal(${i})">查看详情 →</button>
         </div>
       </div>
-      <details class="msg-fold" ${t.status === 3 ? "" : "open"}>
+      <details class="msg-fold" ${(t.status === 1 || t.status === 10) ? "open" : ""}>
       <summary></summary>
       <div class="msg-block" onclick="markTaskSeen(${i})">
         ${(() => {
@@ -384,7 +406,7 @@ function render() {
               c = parts.join('，');
             }
             if (!c) return '';
-            const isNew = seen && m.created_at > seen;
+            const isNew = seen && fmtTs(m.created_at) > seen;
             const newDot = isNew ? '<span class="unread-dot msg"></span>' : '';
             return `<div class="msg-line"><span class="dot"></span><span class="t">${time}</span><span class="c">${c}</span>${newDot}</div>`;
           }).join('');
@@ -397,6 +419,8 @@ function render() {
           <button type="button" class="stat-chip" title="点击查看图片并做 OCR 识别" onclick="runCardOCR(${i})">${ICONS.img}<span><b>${t.images}</b> 张图片</span></button>
           <button type="button" class="stat-chip" title="点击查看附件详情" onclick="openModal(${i})">${ICONS.file}<span><b>${t.docCount}</b> 个附件</span></button>
           <span class="stat-chip">${ICONS.search}<span><b>${t.msgCount}</b> 条消息</span></span>
+          ${tagChips}
+          <button type="button" class="stat-chip tag-add" title="添加标签" onclick="openTagPicker(event, ${i})">${ICONS.tag}<span>＋ 标签</span></button>
         </div>
       </div>
     </div>`;
@@ -967,7 +991,7 @@ function verifyTable(results) {
   return h + '</tbody></table>';
 }
 
-function esc(s) { return s ? String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') : '-'; }
+function esc(s) { return s ? String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;') : '-'; }
 
 // ── Toast ──
 
@@ -1042,6 +1066,271 @@ function dropdownRow(o) {
       <span style="flex:1;min-width:0;font-size:var(--fs-sm);color:var(--gray-800);word-break:break-all">${esc(o.value)}</span>
       <button class="btn" style="height:26px;padding:0 10px;font-size:var(--fs-xs)" onclick="doDeleteDropdown(${o.id})">删除</button>
     </div>`;
+}
+
+// ── 个人标签 ──
+
+async function loadMyTags() {
+  try {
+    const r = await authFetch('/api/tags');
+    if (!r.ok) throw new Error('加载标签失败');
+    myTags = await r.json();
+  } catch { myTags = []; }
+}
+
+async function createMyTag(name, color) {
+  const r = await authFetch('/api/tags', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: `name=${encodeURIComponent(name)}&color=${encodeURIComponent(color || '#1677ff')}`
+  });
+  if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.detail || '创建失败'); }
+  await loadMyTags();
+}
+
+async function deleteMyTag(id) {
+  const r = await authFetch(`/api/tags/${id}`, { method: 'DELETE' });
+  if (!r.ok) throw new Error('删除失败');
+  await loadMyTags();
+}
+
+async function loadTaskTags(taskId) {
+  try {
+    const r = await authFetch(`/api/tags/tasks/${taskId}`);
+    if (!r.ok) throw new Error('加载失败');
+    return await r.json();
+  } catch { return []; }
+}
+
+async function addTaskTag(taskId, tagId) {
+  const r = await authFetch(`/api/tags/tasks/${taskId}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: `tag_id=${tagId}`
+  });
+  if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.detail || '添加失败'); }
+  return await r.json();
+}
+
+async function renameMyTag(id, name, color) {
+  const body = `name=${encodeURIComponent(name)}` + (color ? `&color=${encodeURIComponent(color)}` : '');
+  const r = await authFetch(`/api/tags/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body
+  });
+  if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.detail || '修改失败'); }
+  await loadMyTags();
+}
+
+async function deleteTaskTag(taskId, ttId) {
+  const r = await authFetch(`/api/tags/tasks/${taskId}/${ttId}`, { method: 'DELETE' });
+  if (!r.ok) throw new Error('删除失败');
+}
+
+let myTags = [];
+
+// ── 个人标签管理弹窗 ──
+
+const TAG_COLORS = ['#1677ff', '#52c41a', '#faad14', '#722ed1', '#fa541c', '#13c2c2'];
+let tagColorPicked = TAG_COLORS[0];
+
+function openTagManage() {
+  document.getElementById('tagManageMask').style.display = 'flex';
+  document.getElementById('tagNewName').value = '';
+  tagColorPicked = TAG_COLORS[0];
+  editingTagId = null;
+  renderTagSwatches();
+  loadTagManageList();
+}
+
+function closeTagManage() {
+  document.getElementById('tagManageMask').style.display = 'none';
+}
+
+function pickTagColor(c) {
+  tagColorPicked = c;
+  renderTagSwatches();
+}
+
+function renderTagSwatches() {
+  document.getElementById('tagColorSwatches').innerHTML = TAG_COLORS.map(c =>
+    `<span class="tag-swatch${c === tagColorPicked ? ' on' : ''}" style="background:${c}" title="${c}" onclick="pickTagColor('${c}')"></span>`
+  ).join('');
+}
+
+async function loadTagManageList() {
+  const wrap = document.getElementById('tagManageList');
+  wrap.innerHTML = '<div style="padding:12px;color:var(--gray-500);font-size:var(--fs-sm)">加载中…</div>';
+  await loadMyTags();
+  wrap.innerHTML = myTags.length
+    ? myTags.map(tagManageRow).join('')
+    : '<div style="padding:12px;color:var(--gray-500);font-size:var(--fs-sm)">还没有标签，先在上方创建</div>';
+}
+
+function tagManageRow(t) {
+  if (t.id === editingTagId) {
+    return `<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border:1px solid var(--blue-300);border-radius:var(--r-sm);background:#f7faff;flex-wrap:wrap">
+        <div id="tagEditSwatches" style="display:flex;gap:6px">${TAG_COLORS.map(c =>
+          `<span class="tag-swatch${c === editColorPicked ? ' on' : ''}" style="background:${c}" onclick="pickEditColor('${c}')"></span>`
+        ).join('')}</div>
+        <input class="filter-input" id="tagEditName" value="${esc(t.name)}" onkeydown="if(event.key==='Enter')saveTagEdit(${t.id});if(event.key==='Escape')cancelTagEdit()" style="flex:1;margin:0;min-width:100px">
+        <button class="btn primary" style="height:26px;padding:0 10px;font-size:var(--fs-xs)" onclick="saveTagEdit(${t.id})">保存</button>
+        <button class="btn" style="height:26px;padding:0 10px;font-size:var(--fs-xs)" onclick="cancelTagEdit()">取消</button>
+      </div>`;
+  }
+  return `<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border:1px solid var(--line);border-radius:var(--r-sm);background:#fff">
+      <span style="width:10px;height:10px;border-radius:50%;background:${t.color};flex:none"></span>
+      <span style="flex:1;min-width:0;font-size:var(--fs-sm);color:var(--gray-800);word-break:break-all">${esc(t.name)}</span>
+      <button class="btn" style="height:26px;padding:0 10px;font-size:var(--fs-xs)" onclick="doRenameTag(${t.id})">修改</button>
+      <button class="btn" style="height:26px;padding:0 10px;font-size:var(--fs-xs)" onclick="doDeleteTag(${t.id})">删除</button>
+    </div>`;
+}
+
+async function doAddTag() {
+  const input = document.getElementById('tagNewName');
+  const name = input.value.trim();
+  if (!name) { toast('请输入标签名称'); input.focus(); return; }
+  try {
+    await createMyTag(name, tagColorPicked);
+    input.value = '';
+    loadTagManageList();
+    toast('已创建：' + name);
+  } catch (e) {
+    toast(e.message);
+  }
+}
+
+async function doDeleteTag(id) {
+  if (!confirm('删除标签后，所有任务上的该标签也会被移除，确定？')) return;
+  try {
+    await deleteMyTag(id);
+    // 绑定已被后端级联删除，刷新本地缓存让卡片同步消失
+    await Promise.all([loadTagManageList(), loadTagBindings()]);
+    render();
+    toast('已删除');
+  } catch (e) {
+    toast(e.message);
+  }
+}
+
+// 行内编辑标签：editingTagId 指向正在编辑的行，tagManageRow 据此渲染编辑态
+let editingTagId = null;
+let editColorPicked = '';
+
+function doRenameTag(id) {
+  const tag = myTags.find(x => x.id === id);
+  if (!tag) return;
+  editingTagId = id;
+  editColorPicked = tag.color;
+  loadTagManageList();
+  setTimeout(() => { const inp = document.getElementById('tagEditName'); if (inp) { inp.focus(); inp.select(); } }, 0);
+}
+
+function pickEditColor(c) {
+  editColorPicked = c;
+  const wrap = document.getElementById('tagEditSwatches');
+  if (wrap) wrap.innerHTML = TAG_COLORS.map(x =>
+    `<span class="tag-swatch${x === editColorPicked ? ' on' : ''}" style="background:${x}" onclick="pickEditColor('${x}')"></span>`
+  ).join('');
+}
+
+function cancelTagEdit() {
+  editingTagId = null;
+  loadTagManageList();
+}
+
+async function saveTagEdit(id) {
+  const input = document.getElementById('tagEditName');
+  const name = (input ? input.value : '').trim();
+  const tag = myTags.find(x => x.id === id);
+  if (!name) { toast('标签名不能为空'); return; }
+  if (tag && name === tag.name && editColorPicked === tag.color) { cancelTagEdit(); return; }
+  try {
+    await renameMyTag(id, name, editColorPicked);
+    editingTagId = null;
+    // task_tags 只存引用，改完刷新绑定缓存让卡片同步生效
+    await Promise.all([loadTagManageList(), loadTagBindings()]);
+    render();
+    toast('已保存');
+  } catch (e) {
+    toast(e.message);
+  }
+}
+
+// ── 任务卡片标签选择弹窗 ──
+
+let tagPickerIdx = -1;
+
+async function openTagPicker(e, i) {
+  if (e) e.stopPropagation();
+  tagPickerIdx = i;
+  const t = renderedTasks[i];
+  if (!t) return;
+  document.getElementById('tagPickerSub').textContent = (t.company || t.user);
+  document.getElementById('tagPickerMask').style.display = 'flex';
+  await loadMyTags(); // 拿最新标签（可能刚在管理弹窗里建了新的）
+  renderTagPicker();
+}
+
+function closeTagPicker() {
+  document.getElementById('tagPickerMask').style.display = 'none';
+}
+
+function renderTagPicker() {
+  const t = renderedTasks[tagPickerIdx];
+  if (!t) return;
+  const wrap = document.getElementById('tagPickerList');
+  const empty = document.getElementById('tagPickerEmpty');
+  if (!myTags.length) {
+    wrap.innerHTML = '';
+    empty.style.display = 'block';
+    return;
+  }
+  empty.style.display = 'none';
+  const applied = tagBindings.get(t.id) || [];
+  wrap.innerHTML = myTags.map(tag => {
+    const on = applied.some(b => b.tag_id === tag.id);
+    return `<span class="pick-tag${on ? ' on' : ''}" style="background:${on ? tag.color : tag.color + '1a'};color:${on ? '#fff' : tag.color}" onclick="toggleTaskTag(${tagPickerIdx}, ${tag.id})">${esc(tag.name)}</span>`;
+  }).join('');
+}
+
+async function toggleTaskTag(i, tagId) {
+  const t = renderedTasks[i];
+  if (!t) return;
+  const bindings = tagBindings.get(t.id) || [];
+  const applied = bindings.find(b => b.tag_id === tagId);
+  try {
+    if (applied) {
+      await deleteTaskTag(t.id, applied.tt_id);
+      tagBindings.set(t.id, bindings.filter(b => b.tag_id !== tagId));
+    } else {
+      const nb = await addTaskTag(t.id, tagId);
+      // 接口返回的关联 id 字段名是 id，统一成 tt_id 再入缓存（与服务端批量接口一致）
+      tagBindings.set(t.id, [...bindings, { tt_id: nb.id, tag_id: nb.tag_id, name: nb.name, color: nb.color }]);
+    }
+    render();
+    renderTagPicker();
+  } catch (e) {
+    toast(e.message);
+  }
+}
+
+// 卡片标签片右上角 ×：直接移除该任务上的标签（不弹窗）
+async function removeTaskTag(e, i, tagId) {
+  e.stopPropagation();
+  const t = renderedTasks[i];
+  if (!t) return;
+  const bindings = tagBindings.get(t.id) || [];
+  const applied = bindings.find(b => b.tag_id === tagId);
+  if (!applied) return;
+  try {
+    await deleteTaskTag(t.id, applied.tt_id);
+    tagBindings.set(t.id, bindings.filter(b => b.tag_id !== tagId));
+    render();
+  } catch (err) {
+    toast(err.message);
+  }
 }
 
 async function loadDropdownList() {

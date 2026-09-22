@@ -1,4 +1,4 @@
-from sqlalchemy import Column, BigInteger, String, Text, DateTime, func, JSON, Integer
+from sqlalchemy import Column, BigInteger, String, Text, DateTime, func, JSON, Integer, Index
 from sqlalchemy.dialects.mysql import TINYINT
 from sqlalchemy.orm import declarative_base
 
@@ -16,6 +16,7 @@ class ChatMessage(Base):
     creator = Column(String(50), nullable=True, comment="发送人")
     user_id = Column(BigInteger, nullable=True, comment="发送人ID")
     created_at = Column(DateTime, server_default=func.now(), comment="发送时间")
+    recalled_at = Column(DateTime, nullable=True, comment="撤回时间，NULL=正常（逻辑删除）")
 
 
 class InsuranceTask(Base):
@@ -24,7 +25,7 @@ class InsuranceTask(Base):
 
     id = Column(BigInteger, primary_key=True, autoincrement=True, comment="主键")
     task_id = Column(String(32), nullable=False, unique=True, comment="任务ID")
-    status = Column(TINYINT, nullable=False, default=1, comment="1进行中/2待确认/3已做单/4已递交/5对公认款中/6二维码/7待补充/8已作废/9待递交")
+    status = Column(TINYINT, nullable=False, default=1, comment="1进行中/2待确认/3已做单/4已递交/5对公认款中/6二维码/7待补充/8已作废/9待递交/10进行中(修改,客服在非进行中状态发消息时自动置入,不可手动设置)")
     business_type = Column(TINYINT, nullable=True, comment="1新投/2批改")
     insurance_company = Column(String(50), nullable=True, comment="保险公司")
     customer_company = Column(String(100), nullable=True, comment="客户公司")
@@ -34,6 +35,7 @@ class InsuranceTask(Base):
     operator_id = Column(BigInteger, nullable=True, comment="做单员ID")
     created_at = Column(DateTime, server_default=func.now(), comment="创建时间")
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), comment="更新时间")
+    last_msg_at = Column(DateTime, nullable=True, comment="最新消息时间（发消息时同步更新，用于红点判断）")
 
 
 class TaskComment(Base):
@@ -70,3 +72,30 @@ class DropdownOption(Base):
     category = Column(String(30), nullable=False, comment="分类标识")
     value    = Column(String(100), nullable=False, comment="选项值")
     sort     = Column(Integer, default=0, comment="排序")
+
+
+class Tag(Base):
+    """用户自定义标签"""
+    __tablename__ = "tags"
+
+    id         = Column(BigInteger, primary_key=True, autoincrement=True)
+    user_id    = Column(Integer, nullable=False, index=True, comment="创建者")
+    name       = Column(String(30), nullable=False, comment="标签名")
+    color      = Column(String(20), default="#1677ff", comment="颜色")
+    created_at = Column(DateTime, server_default=func.now())
+
+
+class TaskTag(Base):
+    """任务-标签关联表"""
+    __tablename__ = "task_tags"
+
+    id         = Column(BigInteger, primary_key=True, autoincrement=True)
+    user_id    = Column(Integer, nullable=False, comment="谁加的")
+    task_id    = Column(String(32), nullable=False, comment="哪个任务")
+    tag_id     = Column(BigInteger, nullable=False, comment="哪个标签")
+    created_at = Column(DateTime, server_default=func.now())
+
+    __table_args__ = (
+        Index("idx_user_task", "user_id", "task_id"),
+        Index("idx_task", "task_id"),
+    )

@@ -25,6 +25,10 @@ class ChatMessageOutDTO(BaseModel):
     file_paths: Optional[list[str]] = None
     creator: Optional[str] = None
     creator_name: Optional[str] = None
+    # 发送者 id：客户端判断"这条是不是我发的"要用（决定靠左/靠右、以及能否撤回）
+    user_id: Optional[int] = None
+    # 撤回时间：非空表示已撤回（逻辑删除，行还在）。内容只对发送者本人可见
+    recalled_at: Optional[datetime] = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

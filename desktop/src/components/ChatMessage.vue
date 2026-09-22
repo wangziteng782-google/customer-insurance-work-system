@@ -1,5 +1,11 @@
 <template>
   <div class="chat-message" :class="{ handler: isHandler }">
+    <!-- 已撤回：不显示气泡，只在原位置留一行灰提示 + 「重新编辑」（点它把内容放回输入框） -->
+    <div v-if="recalled" class="recalled-line">
+      你撤回了一条消息
+      <a v-if="content" class="recalled-redo" @click="$emit('reedit')">重新编辑</a>
+    </div>
+    <template v-else>
     <div class="wrap">
       <div class="bubble" @contextmenu.prevent="onContextMenu">
         <!-- 内勤留言标签 -->
@@ -44,15 +50,16 @@
       </div>
     </div>
 
-    <!-- 右键菜单：复制文本 / 撤回 -->
+    <!-- 右键菜单：复制文本 / 撤回（到 2 分钟撤回项会自己消失，没了可选项就不显示空菜单） -->
     <div
-      v-if="menuVisible"
+      v-if="menuVisible && (content || canRecall)"
       class="ctx-menu"
       :style="{ left: menuX + 'px', top: menuY + 'px' }"
     >
       <div v-if="content" class="ctx-item" @click="copyText">复制文本</div>
       <div v-if="canRecall" class="ctx-item" @click="onRecall">撤回</div>
     </div>
+    </template>
   </div>
 </template>
 
@@ -67,9 +74,11 @@ const props = defineProps({
   isHandler: { type: Boolean, default: false },
   // 能否撤回（自己发的 + 2 分钟内），由父组件判断后传入
   canRecall: { type: Boolean, default: false },
+  // 已撤回（逻辑删除）：渲染成灰提示 + 「重新编辑」，不再显示气泡
+  recalled: { type: Boolean, default: false },
 });
 
-const emit = defineEmits(["view-image", "recall"]);
+const emit = defineEmits(["view-image", "recall", "reedit"]);
 
 const imagePaths = computed(() =>
   (props.filePaths || []).filter((p) => isImagePath(p))
@@ -93,6 +102,7 @@ const menuX = ref(0);
 const menuY = ref(0);
 
 function onContextMenu(e) {
+  if (props.recalled) return; // 撤回提示上没有可操作项
   // 纯附件消息没有文本，但可能可以撤回，所以两者都不满足才不弹菜单
   if (!props.content && !props.canRecall) return;
   menuX.value = Math.min(e.clientX, window.innerWidth - 130);
@@ -298,5 +308,23 @@ onBeforeUnmount(() => {
 .ctx-item:hover {
   background: var(--primary-light);
   color: var(--primary);
+}
+
+/* ── 已撤回提示（逻辑删除后留在原位置，居中灰字） ── */
+.recalled-line {
+  width: 100%;
+  padding: 2px 0;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-muted);
+  user-select: none;
+}
+.recalled-redo {
+  margin-left: 4px;
+  color: var(--primary);
+  cursor: pointer;
+}
+.recalled-redo:hover {
+  text-decoration: underline;
 }
 </style>

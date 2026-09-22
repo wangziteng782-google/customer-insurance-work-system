@@ -42,15 +42,19 @@
         <div v-else-if="loadingHistory" class="loading-hint">加载消息中...</div>
 
         <template v-else>
+          <!-- handler=内勤留言；消息表里别人发的也按"对方"显示（靠左灰色），
+               否则代看别人的任务时，对方的消息会渲染成你自己的蓝色气泡 -->
           <ChatMessage
             v-for="(m, i) in messages"
             :key="m.id ?? i"
             :content="m.content"
             :file-paths="m.filePaths"
-            :is-handler="m.type === 'handler'"
+            :is-handler="m.type === 'handler' || m.userId !== (store.user?.id ?? null)"
             :can-recall="canRecall(m)"
+            :recalled="!!m.recalledAt"
             @view-image="openViewer"
             @recall="onRecallMessage(m)"
+            @reedit="onReedit(m)"
           />
         </template>
       </div>
@@ -457,6 +461,10 @@ function renderHistory(msgs, comments) {
   messages.value = reordered.map(([type, , data]) => ({
     id: data.id ?? null,
     type,
+    // 发送者：type 只区分"消息表/留言表"，判断归属必须用 user_id
+    userId: data.user_id ?? null,
+    // 撤回时间（非空 = 已撤回，渲染成灰提示而不是气泡）
+    recalledAt: data.recalled_at ?? null,
     content: data.content || "",
     filePaths: data.file_paths || null,
     createdAt: data.created_at || "",
@@ -466,26 +474,79 @@ function renderHistory(msgs, comments) {
 // ── 撤回（仅自己发的 + 2 分钟内，窗口与后端 RECALL_WINDOW_SECONDS 一致） ──
 const RECALL_WINDOW_MS = 120 * 1000;
 
-/** 能否撤回：type=user 即自己发的（客服只看到自己提的任务），且未超过 2 分钟 */
+/**
+ * 时间基准：canRecall 依赖它，所以定时器到点后模板会自动重算。
+ * 不能直接用 Date.now()（不是响应式的）—— 那样"撤回"会一直挂在右键菜单里，
+ * 直到别的操作触发重渲染；用户点了才被后端拒绝（400/403），白跑一次请求。
+ */
+const recallNow = ref(Date.now());
+let recallTimer = null;
+
+/** 能否撤回：自己发的 + 未超过 2 分钟（窗口与后端 RECALL_WINDOW_SECONDS 一致） */
 function canRecall(m) {
   if (!m || m.type !== "user" || !m.id) return false;
+  if (m.recalledAt) return false; // 已撤回的不再给撤回入口
+  if (m.userId !== (store.user?.id ?? null)) return false; // 只给自己发的消息
   const t = new Date(m.createdAt).getTime();
   if (!t) return false;
-  const gap = Date.now() - t;
-  return gap >= 0 && gap < RECALL_WINDOW_MS;
+  // 不要求 gap >= 0：本机时钟比服务端慢几秒时，那个条件会让"撤回"凭空消失
+  return recallNow.value - t < RECALL_WINDOW_MS;
 }
+
+/**
+ * 只给"下一个会过期的撤回入口"设一个定时器（不是每秒轮询）：
+ * 到点更新时间基准 → 那个「撤回」自己消失 → 再排下一个。
+ * 只改本地时间，不发请求（后端仍然会自己校验时间窗，这里只是把结果提前告诉用户）。
+ */
+function scheduleRecallExpiry() {
+  clearTimeout(recallTimer);
+  recallTimer = null;
+  const t = Date.now();
+  const me = store.user?.id ?? null;
+  let next = 0;
+  for (const m of messages.value) {
+    if (m.type !== "user" || !m.id || m.recalledAt) continue;
+    if (m.userId !== me) continue;
+    const at = new Date(m.createdAt).getTime() + RECALL_WINDOW_MS;
+    if (at > t && (!next || at < next)) next = at;
+  }
+  if (!next) return;
+  // +50ms 余量：保证到点时本机与后端都已判定超时，不会出现"菜单没了但刚好还能撤"
+  recallTimer = setTimeout(() => {
+    recallNow.value = Date.now();
+    scheduleRecallExpiry();
+  }, next - t + 50);
+}
+
+// 切换任务 / 刷新消息后重排（消息数组是整体替换的，浅监听就够）
+watch(() => messages.value, scheduleRecallExpiry);
+onUnmounted(() => clearTimeout(recallTimer));
 
 async function onRecallMessage(m) {
   try {
     await recallMessage(m.id);
+    // 就地改成"已撤回"：后端是逻辑删除，消息行还在，这里同步标记即可，
+    // 不能只靠 refreshMessages() —— 指纹只比 id 集合，撤回前后完全一样，会被它挡掉
+    const idx = messages.value.findIndex((x) => x.id === m.id);
+    if (idx >= 0) messages.value[idx].recalledAt = new Date().toISOString();
     showToast("已撤回", "success");
-    await refreshMessages(); // 数据指纹变化 → 该消息立即从面板消失
     taskMsgCount.value = Math.max(0, (taskMsgCount.value || 0) - 1);
-    emit("task-changed"); // 通知左侧列表刷新消息数
+    // 通知左侧列表刷新消息数/时间，并同步已读（别在正在聊的这条上冒红点）
+    emit("task-changed", currentTaskId.value);
   } catch (e) {
     showToast(e.message || "撤回失败", "error");
     refreshMessages(); // 可能已超时：刷新让右键菜单项消失
   }
+}
+
+/** 「重新编辑」：把撤回的文字放回输入框，改完可以直接重发 */
+function onReedit(m) {
+  inputText.value = m.content || "";
+  nextTick(() => {
+    textareaEl.value?.focus();
+    autoGrow();
+  });
+  showToast("已放回输入框，可修改后重新发送", "info");
 }
 
 // ── 待上传附件 ──
@@ -695,38 +756,68 @@ async function onSend() {
     }
   }
 
-  // 本地乐观渲染
+  // 拆开发送：文字一条、附件一条（两个独立气泡，表里两行）
+  // 好处：每条都能单独撤回、单独「重新编辑」，附件不会拖着文字一起被撤
   const createdAt = new Date().toISOString();
-  if (text || filePaths.length) {
+  const rows = [];
+  if (text) rows.push({ content: text, filePaths: null });
+  if (filePaths.length) rows.push({ content: "", filePaths });
+  const localKeys = rows.map(() => `${Date.now()}-${Math.random()}`);
+
+  // 本地乐观渲染（localKey 用于拿到服务端 id 后回填对应那条）
+  rows.forEach((r, i) => {
     messages.value.push({
       type: "user",
-      content: text,
-      filePaths: filePaths.length ? filePaths : null,
+      // 带上发送者，否则在服务端版本回来之前，这条会被渲染成"别人的留言"
+      userId: store.user?.id ?? null,
+      content: r.content,
+      filePaths: r.filePaths,
       createdAt,
+      localKey: localKeys[i],
     });
-  }
+  });
 
-  // 保存到后端
-  if (text || filePaths.length) {
+  // 逐条保存到后端
+  let savedAny = false;
+  for (let i = 0; i < rows.length; i++) {
     try {
-      await createChatMessage({
+      const saved = await createChatMessage({
         task_id: currentTaskId.value,
-        content: text,
-        file_paths: filePaths.length ? filePaths : null,
+        content: rows[i].content,
+        file_paths: rows[i].filePaths,
         creator: store.user?.display_name ?? null,
         user_id: store.user?.id ?? null,
         insurance_company: insuranceCompany.value,
         business_type: policyType.value,
         customer_company: customerCompany.value,
       });
+      savedAny = true;
       taskMsgCount.value += 1;
+      // 用服务端返回的 id 回填本地这条：撤回要求消息有 id，而本地乐观插入的没有。
+      // 不能改用 refreshMessages() —— 它的守卫里 sending 此刻还是 true，会直接 return，
+      // 结果要等 15 秒轮询才拿到 id，表现出来就是"过几秒才能撤回"。
+      // 赋值必须走 messages.value[idx]（响应式代理），改局部变量不会触发重渲染。
+      const idx = messages.value.findIndex((x) => x.localKey === localKeys[i]);
+      if (saved && idx >= 0) {
+        messages.value[idx].id = saved.id ?? null;
+        messages.value[idx].createdAt = saved.created_at || createdAt;
+        messages.value[idx].localKey = null;
+      }
     } catch (e) {
       console.error("保存消息失败:", e);
       showToast(`保存消息失败: ${e.message}`, "error");
     }
   }
 
-  if (newTaskId) emit("task-created", newTaskId);
+  // 通知左侧列表马上更新（卡片上的时间 / 消息数 / 排序都来自这次重新拉取）：
+  // 新任务回第 1 页刷新；已有任务静默刷新并带上 task_id —— 让左栏同步「已读」，
+  // 否则卡片时间更新了，还会在你自己正在聊的这条上冒出一个红点
+  if (savedAny) {
+    if (newTaskId) emit("task-created", newTaskId);
+    else emit("task-changed", currentTaskId.value);
+  }
+  // 刚发出去的这条也要排上"到点自动收起撤回入口"（新开任务时前面没有消息，没排过）
+  if (rows.length) scheduleRecallExpiry();
 
   inputText.value = "";
   clearFiles();

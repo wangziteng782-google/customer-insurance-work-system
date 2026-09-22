@@ -13,6 +13,7 @@ from cit_api.router.message_router import router as message_router
 from cit_api.router.user_router import router as user_router
 from cit_api.router.ocr_router import router as ocr_router
 from cit_api.router.dropdown_router import router as dropdown_router
+from cit_api.router.tag_router import router as tag_router
 
 # 启动时建表（开发期使用，生产建议用 Alembic 迁移）
 Base.metadata.create_all(bind=engine)
@@ -41,6 +42,7 @@ app.include_router(message_router)
 app.include_router(user_router)
 app.include_router(ocr_router)
 app.include_router(dropdown_router)
+app.include_router(tag_router)
 
 
 @app.exception_handler(RequestValidationError)

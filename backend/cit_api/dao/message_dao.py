@@ -1,6 +1,6 @@
 from datetime import date
 
-from sqlalchemy import func, text
+from sqlalchemy import case, func, text
 from sqlalchemy.orm import Session
 
 from cit_api.model.model import ChatMessage, InsuranceTask, TaskComment, User
@@ -20,10 +20,15 @@ class ChatMessageDAO:
             user_id=dto.user_id,
         )
         db.add(msg)
-        # 同步刷新任务 updated_at，前端未读红点依赖它判断"是否有新消息"
+        # 新增消息同时更新last_msg_at字段，前端未读红点依赖它判断"是否有新消息"；
+        # 若任务处于非进行中(1)且非进行中(修改)(10)的任何状态（含已作废8），
+        # 客服发新消息即自动置为10进行中(修改)。条件放在WHERE里保证原子性。
         db.query(InsuranceTask).filter(
             InsuranceTask.task_id == dto.task_id
-        ).update({"updated_at": func.now()}, synchronize_session=False)
+        ).update({
+            "last_msg_at": func.now(),
+            "status": case((InsuranceTask.status.notin_((1, 10)), 10), else_=InsuranceTask.status)
+        }, synchronize_session=False)
         db.commit()
         db.refresh(msg)
         return msg
@@ -34,26 +39,46 @@ class ChatMessageDAO:
         return db.get(ChatMessage, message_id)
 
     @staticmethod
-    def delete_within_window(db: Session, message_id: int, user_id: int,
+    def recall_within_window(db: Session, message_id: int, user_id: int,
                              window_seconds: int) -> int:
-        """撤回消息（物理删除），返回受影响行数
+        """撤回消息（逻辑删除：只打 recalled_at 标记），返回受影响行数
 
         时间窗判定放在 SQL 里：created_at 由数据库 now() 写入，用同一个时钟比较，
-        避免应用与数据库之间的时钟/时区漂移。返回 0 表示已超出时间窗
+        避免应用与数据库之间的时钟/时区漂移。返回 0 表示已超时或已撤回
         （存在性、归属由上层预先校验）。
 
-        只删消息行，不刷新 insurance_tasks.updated_at，
-        否则"撤回一下"会让任务跳到列表最前。
+        不删行、不删七牛附件：撤回后要显示"你撤回了一条消息"，发送者还要「重新编辑」。
+        也不刷新 insurance_tasks.updated_at，否则撤回一下会让任务跳到列表最前。
         """
         return (
             db.query(ChatMessage)
             .filter(
                 ChatMessage.id == message_id,
                 ChatMessage.user_id == user_id,
+                ChatMessage.recalled_at.is_(None),
                 ChatMessage.created_at
                 >= func.now() - text(f"INTERVAL {window_seconds} SECOND"),
             )
-            .delete(synchronize_session=False)
+            .update({"recalled_at": func.now()}, synchronize_session=False)
+        )
+
+    @staticmethod
+    def refresh_last_msg_at(db: Session, task_id: str) -> None:
+        """重算任务最新消息时间（排除已撤回的消息）
+
+        撤回后 last_msg_at 不能停在已撤回的消息上，否则侧栏红点无法消除、
+        任务在列表里的排序位置也回不去。
+        """
+        last = (
+            db.query(func.max(ChatMessage.created_at))
+            .filter(
+                ChatMessage.task_id == task_id,
+                ChatMessage.recalled_at.is_(None),
+            )
+            .scalar()
+        )
+        db.query(InsuranceTask).filter(InsuranceTask.task_id == task_id).update(
+            {"last_msg_at": last}, synchronize_session=False
         )
 
     @staticmethod
@@ -67,27 +92,10 @@ class ChatMessageDAO:
 
     @staticmethod
     def _order_by_last_message(db: Session, query):
-        """按「该任务最新一条消息的发送时间」排序（没有消息则退回任务创建时间）
-
-        为什么不用 updated_at：内勤改状态(做单/递交/退回)会刷新 updated_at 但不新增消息，
-        用 updated_at 排会导致"只改了状态的任务"也跳到新位置。
-        用消息时间排序可保证：只有客服真的发了新消息，顺序才变化。
-        第二排序键用 id，避免同一秒内多条任务顺序不稳定。
-        """
-        last_msg = (
-            db.query(
-                ChatMessage.task_id.label("task_id"),
-                func.max(ChatMessage.created_at).label("last_msg_at"),
-            )
-            .group_by(ChatMessage.task_id)
-            .subquery()
-        )
-        return (
-            query.outerjoin(last_msg, last_msg.c.task_id == InsuranceTask.task_id)
-            .order_by(
-                func.coalesce(last_msg.c.last_msg_at, InsuranceTask.created_at).asc(),
-                InsuranceTask.id.asc(),
-            )
+        """按 last_msg_at 升序排序"""
+        return query.order_by(
+            func.coalesce(InsuranceTask.last_msg_at, InsuranceTask.created_at).asc(),
+            InsuranceTask.id.asc(),
         )
 
     @staticmethod
@@ -108,7 +116,10 @@ class ChatMessageDAO:
                     ChatMessage.task_id,
                     func.count(ChatMessage.id),
                 )
-                .filter(ChatMessage.task_id.in_(task_ids))
+                .filter(
+                    ChatMessage.task_id.in_(task_ids),
+                    ChatMessage.recalled_at.is_(None),  # 撤回的消息不计入"N 条消息"
+                )
                 .group_by(ChatMessage.task_id)
                 .all()
             )
@@ -147,11 +158,12 @@ class ChatMessageDAO:
                 InsuranceTask.creator,
                 InsuranceTask.task_id,
                 InsuranceTask.updated_at,
+                InsuranceTask.last_msg_at,
             )
             .all()
         )
         companies: dict[str, dict] = {}
-        for company, creator, task_id, updated_at in rows:
+        for company, creator, task_id, updated_at, last_msg_at in rows:
             c = companies.setdefault(
                 company,
                 {"name": company, "count": 0, "users": set(), "task_times": []},
@@ -159,7 +171,7 @@ class ChatMessageDAO:
             c["count"] += 1
             if creator:
                 c["users"].add(creator)
-            c["task_times"].append({"id": task_id, "updated_at": updated_at})
+            c["task_times"].append({"id": task_id, "updated_at": updated_at, "last_msg_at": last_msg_at})
         result = []
         for c in companies.values():
             c["users"] = list(c["users"])
@@ -183,7 +195,10 @@ class ChatMessageDAO:
         if task_ids:
             rows = (
                 db.query(ChatMessage.task_id, func.count(ChatMessage.id))
-                .filter(ChatMessage.task_id.in_(task_ids))
+                .filter(
+                    ChatMessage.task_id.in_(task_ids),
+                    ChatMessage.recalled_at.is_(None),  # 撤回的消息不计入"N 条消息"
+                )
                 .group_by(ChatMessage.task_id)
                 .all()
             )
@@ -232,7 +247,10 @@ class ChatMessageDAO:
         if task_ids:
             rows = (
                 db.query(ChatMessage.task_id, func.count(ChatMessage.id))
-                .filter(ChatMessage.task_id.in_(task_ids))
+                .filter(
+                    ChatMessage.task_id.in_(task_ids),
+                    ChatMessage.recalled_at.is_(None),  # 撤回的消息不计入"N 条消息"
+                )
                 .group_by(ChatMessage.task_id)
                 .all()
             )
@@ -275,7 +293,10 @@ class ChatMessageDAO:
         if task_ids:
             rows = (
                 db.query(ChatMessage.task_id, func.count(ChatMessage.id))
-                .filter(ChatMessage.task_id.in_(task_ids))
+                .filter(
+                    ChatMessage.task_id.in_(task_ids),
+                    ChatMessage.recalled_at.is_(None),  # 撤回的消息不计入"N 条消息"
+                )
                 .group_by(ChatMessage.task_id)
                 .all()
             )
@@ -337,12 +358,19 @@ class ChatMessageDAO:
 
     @staticmethod
     def list_messages_batch(db: Session, task_ids: list[str]) -> dict[str, list[ChatMessage]]:
-        """批量获取任务消息列表，返回 {task_id: [messages]}"""
+        """批量获取任务消息列表，返回 {task_id: [messages]}
+
+        撤回的消息不进列表（列表只做展示/预览）；
+        发送者要看"你撤回了一条消息"和重新编辑，走 list_by_task 的查看者逻辑。
+        """
         if not task_ids:
             return {}
         messages = (
             db.query(ChatMessage)
-            .filter(ChatMessage.task_id.in_(task_ids))
+            .filter(
+                ChatMessage.task_id.in_(task_ids),
+                ChatMessage.recalled_at.is_(None),
+            )
             .order_by(ChatMessage.created_at.asc())
             .all()
         )

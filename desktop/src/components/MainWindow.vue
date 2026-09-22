@@ -76,8 +76,9 @@ function onTaskCreated(taskId) {
   historyRef.value?.resetAndRefresh();
 }
 
-/** 消息被撤回 — 静默刷新左侧列表（保留选中与页码） */
-function onTaskChanged() {
+/** 消息变化（发送 / 撤回）— 静默刷新左侧列表（保留选中与页码），并把该任务标记为已读 */
+function onTaskChanged(taskId) {
+  if (taskId) historyRef.value?.markSeen(taskId);
   historyRef.value?.refresh();
 }
 

@@ -26,9 +26,10 @@ def create_message(payload: ChatMessageCreateDTO, db: Session = Depends(get_db))
 
 
 @router.get("/messages", response_model=list[ChatMessageOutDTO])
-def list_messages(task_id: str, db: Session = Depends(get_db)):
-    """获取某任务的所有聊天记录"""
-    return ChatMessageService(db).list_by_task(task_id)
+def list_messages(task_id: str, user: User = Depends(get_current_user),
+                  db: Session = Depends(get_db)):
+    """获取某任务的所有聊天记录（撤回的内容只对发送者可见）"""
+    return ChatMessageService(db).list_by_task(task_id, user.id)
 
 
 @router.delete("/messages/{message_id}")
@@ -37,7 +38,7 @@ def recall_message(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """撤回消息（物理删除，仅限本人发送且 2 分钟内）"""
+    """撤回消息（逻辑删除，仅限本人发送且 2 分钟内；撤回后仍保留撤回提示）"""
     return ChatMessageService(db).recall(message_id, user)
 
 
