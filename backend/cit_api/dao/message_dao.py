@@ -321,11 +321,23 @@ class ChatMessageDAO:
 
     @staticmethod
     def get_or_create_task(db: Session, task_id: str, **kwargs) -> InsuranceTask:
-        """获取或创建任务"""
+        """获取或创建任务
+
+        任务已存在时：只允许改写客户公司名，其余字段（保险公司/业务类型）不动。
+        场景：撤回第一条消息 → 重新编辑换了一家公司 → 重发时要把任务上的客户公司一起改掉，
+        否则列表里一直是旧名字。客户端平时发的是任务自身的值（相同 → 不执行更新）。
+        """
         task = db.query(InsuranceTask).filter(InsuranceTask.task_id == task_id).first()
         if not task:
             task = InsuranceTask(task_id=task_id, **kwargs)
             db.add(task)
+            db.commit()
+            db.refresh(task)
+            return task
+
+        new_company = (kwargs.get("customer_company") or "").strip()
+        if new_company and new_company != (task.customer_company or "").strip():
+            task.customer_company = new_company
             db.commit()
             db.refresh(task)
         return task

@@ -123,9 +123,11 @@
           v-model="inputText"
           :disabled="!inputEnabled"
           :placeholder="
-            inputEnabled
-              ? '输入文字，可拖拽 / 粘贴图片或文件，Enter 发送，Ctrl+Enter 换行'
-              : '请先选择左侧保单，或点击「开启新保单收集」'
+            !inputEnabled
+              ? '请先选择左侧保单，或点击「开启新保单收集」'
+              : needCompanyFromText
+                ? '第一条消息请以「公司名称：xxx」或「公司：xxx」开头，例如：公司名称：江西浩大电梯有限公司'
+                : '输入文字，可拖拽 / 粘贴图片或文件，Enter 发送，Ctrl+Enter 换行'
           "
           @keydown="onKeydown"
           @paste="onPaste"
@@ -216,6 +218,7 @@ import {
 } from "../api";
 import {
   baseName,
+  extractCustomerCompany,
   fileIcon,
   fmtSize,
   isImagePath,
@@ -279,6 +282,18 @@ const canSend = computed(
   () => !!inputText.value.trim() || pendingFiles.value.length > 0
 );
 
+/**
+ * 是否要从消息里提取客户公司名
+ * ① 新任务（还没建）：第一条消息必须带「公司名称：/公司：」
+ * ② 消息全被撤回了：等于回到"没有内容"的状态，重发的这条就是新的第一条
+ */
+const needCompanyFromText = computed(
+  () =>
+    !!inputEnabled.value &&
+    (!currentTaskId.value ||
+      !messages.value.some((m) => m.type === "user" && !m.recalledAt))
+);
+
 /** 判断是否停在底部附近 */
 function onScroll() {
   const el = scrollEl.value;
@@ -320,11 +335,11 @@ function genTaskId() {
 }
 
 // ── 新建保单收集 ──
-function onNewPolicyConfirm({ company, customerCompany: customer, type }) {
+function onNewPolicyConfirm({ company, type }) {
   showNewPolicy.value = false;
   insuranceCompany.value = company;
   policyType.value = type;
-  customerCompany.value = customer;
+  customerCompany.value = ""; // 由第一条消息提取（见 onSend）
   currentTaskId.value = "";
   taskStatus.value = 1;
   taskMsgCount.value = 0;
@@ -716,6 +731,23 @@ function cancelUpload() {
 async function onSend() {
   const text = inputText.value.trim();
   if (!text && !pendingFiles.value.length) return;
+
+  // 需要从消息里取客户公司名的两种情况：
+  //  ① 新任务的第一条消息
+  //  ② 之前的消息全被撤回了（撤回 → 重新编辑 → 重发，这时要按新名字改写任务的客户公司）
+  // 提取不到就不提交，避免库里出现没有客户公司、或留着旧客户公司的单子
+  if (needCompanyFromText.value) {
+    const name = extractCustomerCompany(text);
+    if (!name) {
+      showToast(
+        "第一条消息请以「公司名称：xxx」或「公司：xxx」开头，例如：公司名称：江西浩大电梯有限公司",
+        "error"
+      );
+      textareaEl.value?.focus();
+      return;
+    }
+    customerCompany.value = name; // 随消息提交给后端写进 insurance_tasks
+  }
 
   sending.value = true;
   let newTaskId = null;

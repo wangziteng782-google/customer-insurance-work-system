@@ -30,9 +30,6 @@
         </div>
       </div>
 
-      <label class="field-label">客户公司 <span style="color: red">*</span></label>
-      <input v-model.trim="customerCompany" placeholder="输入客户公司名称" />
-
       <label class="field-label">保单类型 <span style="color: red">*</span></label>
       <div class="type-row">
         <label class="radio">
@@ -60,7 +57,6 @@ import { listDropdowns } from "../api";
 const emit = defineEmits(["close", "confirm"]);
 
 const company = ref("");
-const customerCompany = ref("");
 const policyType = ref(1);
 const error = ref("");
 const companyOpen = ref(false);
@@ -102,13 +98,9 @@ function onConfirm() {
     companyInput.value?.focus();
     return;
   }
-  if (!customerCompany.value) {
-    error.value = "请输入客户公司名称";
-    return;
-  }
+  // 客户公司名不再在这里填：第一条消息以「公司：xxx」开头，发送时从消息里提取
   emit("confirm", {
     company: company.value,
-    customerCompany: customerCompany.value,
     type: policyType.value,
   });
 }

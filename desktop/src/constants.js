@@ -32,6 +32,23 @@ export function taskTypeLabel(businessType) {
   return businessType === 2 ? "批改" : "新投";
 }
 
+/**
+ * 从消息文本里提取客户公司名
+ *
+ * 规则（刻意保持最简）：只看第一行，认「公司名称：xxx」或「公司：xxx」（中英文冒号都行）。
+ * 返回 "" 表示没提取到，调用方据此阻止提交。
+ */
+const CUSTOMER_COMPANY_RE = /(?:公司名称|公司)\s*[:：]\s*(.+)$/;
+
+export function extractCustomerCompany(text) {
+  const firstLine = String(text || "")
+    .trim()
+    .split("\n")[0]
+    .trim();
+  const m = firstLine.match(CUSTOMER_COMPANY_RE);
+  return m ? m[1].trim() : "";
+}
+
 /** 用户角色：0管理员/1客服(提单人)/2内勤(做单人) */
 export const ROLE_MAP = {
   0: "管理员",
