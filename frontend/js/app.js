@@ -43,6 +43,7 @@ let allUsers = [];
 let allCompanies = [];
 let currentCompany = "全部";
 let selected = [];
+let tagFilterIds = []; // 标签筛选选中的标签 id（多选 OR）
 let renderedTasks = [];
 
 // SVG icons
@@ -326,6 +327,21 @@ function render() {
   else if (selected.length === 1) trigger.textContent = selected[0];
   else trigger.innerHTML = `<span>${selected[0]}等</span><span class="count">${selected.length}</span>`;
 
+  // 标签筛选面板（个人标签，多选 OR：任务带任一选中标签即显示）
+  document.getElementById("tagSelectPanel").innerHTML = myTags.length
+    ? `<div class="tag-filter-chips">` + myTags.map(tag => {
+        const on = tagFilterIds.includes(tag.id);
+        // 选中=实色深底白字；未选=白底+实色描边+彩字（与选择标签弹窗一致）
+        return `<span class="pick-tag" style="background:${on ? tag.color : '#fff'};color:${on ? '#fff' : tag.color};border:1.5px solid ${tag.color}" onclick="toggleTagFilter(${tag.id})">${esc(tag.name)}</span>`;
+      }).join("") + `<span class="pick-tag tag-clear" onclick="resetTagFilter()">清空</span></div>`
+    : `<div class="tag-filter-empty">还没有标签，先在左下角「个人标签管理」创建</div>`;
+  const tagTrigger = document.getElementById("tagSelectLabel");
+  document.getElementById("tagSelect").classList.toggle("has-sel", tagFilterIds.length > 0);
+  const firstName = tagFilterIds.length ? ((myTags.find(t => t.id === tagFilterIds[0]) || {}).name || "") : "";
+  if (tagFilterIds.length === 0) tagTrigger.textContent = "全部";
+  else if (tagFilterIds.length === 1) tagTrigger.textContent = firstName;
+  else tagTrigger.innerHTML = `<span>${esc(firstName)}等</span><span class="count">${tagFilterIds.length}</span>`;
+
   // 筛选任务
   const statusChecks = Array.from(document.querySelectorAll("#statusFilter input:checked")).map(c => parseInt(c.value));
   const typeVal = (document.getElementById("typeFilter") || {}).value || "";
@@ -333,6 +349,10 @@ function render() {
   const baseTasks = selected.length ? d.tasks.filter(t => selected.includes(t.user)) : d.tasks;
   let tasks = statusChecks.length ? baseTasks.filter(t => statusChecks.includes(t.status)) : baseTasks;
   if (typeVal) tasks = tasks.filter(t => (t.type || "新投") === typeVal);
+  // 标签筛选：任务带任一选中标签即显示（OR）。
+  // ponytail: 用内存里的 tagBindings 过滤，任务超 limit=1000 会漏——与现有全部筛选同天花板
+  if (tagFilterIds.length)
+    tasks = tasks.filter(t => tagFilterIds.some(id => (tagBindings.get(t.id) || []).some(b => b.tag_id === id)));
   if (kw) tasks = tasks.filter(t => `${t.company} ${t.user} ${t.id}`.toLowerCase().includes(kw));
   document.getElementById("listCount").textContent = tasks.length;
 
@@ -355,9 +375,9 @@ function render() {
     const unreadDot = isUnread(t)
       ? '<i class="unread-dot card" title="有新的提单消息"></i>'
       : "";
-    // 个人标签片（底部）：点击打开选择弹窗，悬浮右上角 × 直接移除
+    // 个人标签片（底部）：实色深底白字，点击打开选择弹窗，悬浮右上角 × 直接移除
     const tagChips = (tagBindings.get(t.id) || []).map(b =>
-      `<span class="card-tag" style="background:${b.color}1a;color:${b.color}" onclick="openTagPicker(event, ${i})">${esc(b.name)}<i class="tag-x" title="移除标签" onclick="removeTaskTag(event, ${i}, ${b.tag_id})">×</i></span>`
+      `<span class="card-tag" style="background:${b.color};color:#fff" onclick="openTagPicker(event, ${i})">${esc(b.name)}<i class="tag-x" title="移除标签" onclick="removeTaskTag(event, ${i}, ${b.tag_id})">×</i></span>`
     ).join('');
     return `
     <div class="task-item">
@@ -448,10 +468,40 @@ function toggleMultiPanel() {
   document.getElementById("userSelect").classList.toggle("on");
 }
 
+// 点击空白处关闭已打开的下拉（客服人员/标签共用；点在面板内部不关）
+document.addEventListener("click", e => {
+  document.querySelectorAll(".multi-select.on").forEach(el => {
+    if (!el.contains(e.target)) el.classList.remove("on");
+  });
+});
+
 function toggleUser(user) {
   if (selected.includes(user)) selected = selected.filter(x => x !== user);
   else selected.push(user);
   selected.sort();
+  render();
+}
+
+async function toggleTagPanel() {
+  const el = document.getElementById("tagSelect");
+  const opening = !el.classList.contains("on");
+  el.classList.toggle("on");
+  // 打开时拿最新标签（可能刚在个人标签管理里建过/删过），顺带清掉已删除标签的残留选中
+  if (opening) {
+    await loadMyTags();
+    const ids = new Set(myTags.map(t => t.id));
+    tagFilterIds = tagFilterIds.filter(id => ids.has(id));
+    render();
+  }
+}
+
+function toggleTagFilter(id) {
+  tagFilterIds = tagFilterIds.includes(id) ? tagFilterIds.filter(x => x !== id) : [...tagFilterIds, id];
+  render();
+}
+
+function resetTagFilter() {
+  tagFilterIds = [];
   render();
 }
 
@@ -1180,8 +1230,7 @@ function tagManageRow(t) {
       </div>`;
   }
   return `<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border:1px solid var(--line);border-radius:var(--r-sm);background:#fff">
-      <span style="width:10px;height:10px;border-radius:50%;background:${t.color};flex:none"></span>
-      <span style="flex:1;min-width:0;font-size:var(--fs-sm);color:var(--gray-800);word-break:break-all">${esc(t.name)}</span>
+      <span style="background:${t.color};color:#fff;font-size:var(--fs-sm);padding:3px 12px;border-radius:12px;flex:none;max-width:50%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-right:auto">${esc(t.name)}</span>
       <button class="btn" style="height:26px;padding:0 10px;font-size:var(--fs-xs)" onclick="doRenameTag(${t.id})">修改</button>
       <button class="btn" style="height:26px;padding:0 10px;font-size:var(--fs-xs)" onclick="doDeleteTag(${t.id})">删除</button>
     </div>`;
@@ -1291,7 +1340,8 @@ function renderTagPicker() {
   const applied = tagBindings.get(t.id) || [];
   wrap.innerHTML = myTags.map(tag => {
     const on = applied.some(b => b.tag_id === tag.id);
-    return `<span class="pick-tag${on ? ' on' : ''}" style="background:${on ? tag.color : tag.color + '1a'};color:${on ? '#fff' : tag.color}" onclick="toggleTaskTag(${tagPickerIdx}, ${tag.id})">${esc(tag.name)}</span>`;
+    // 选中=实色深底白字（与卡片标签一致）；未选=白底+实色描边+彩字，不用浅色蒙层
+    return `<span class="pick-tag${on ? ' on' : ''}" style="background:${on ? tag.color : '#fff'};color:${on ? '#fff' : tag.color};border:1.5px solid ${tag.color}" onclick="toggleTaskTag(${tagPickerIdx}, ${tag.id})">${esc(tag.name)}</span>`;
   }).join('');
 }
 

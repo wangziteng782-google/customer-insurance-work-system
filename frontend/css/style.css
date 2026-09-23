@@ -88,7 +88,7 @@ h1{font-size:var(--fs-lg);margin:0;padding-left:8px;border-left:3px solid var(--
 .filter-input{flex:1;min-width:240px;max-width:640px;height:34px;padding:0 12px;border:1px solid var(--gray-300);border-radius:var(--r-sm);font-size:var(--fs-sm);color:var(--gray-800);outline:none;background:#fff;transition:border-color .15s}
 .filter-input::placeholder{color:var(--gray-400)}
 .filter-input:focus{border-color:var(--blue)}
-.filter-actions{display:flex;gap:10px;margin-left:auto}
+.filter-actions{display:flex;gap:10px}
 .filter-select{height:34px;padding:0 30px 0 12px;border:1px solid var(--gray-300);border-radius:var(--r-sm);font-size:var(--fs-sm);color:var(--gray-800);outline:none;background:#fff url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='%238c8c8c' d='M0 0l5 6 5-6z'/></svg>") no-repeat right 12px center;appearance:none;cursor:pointer;width:170px}
 .filter-select:focus{border-color:var(--blue)}
 .multi-select{position:relative;display:inline-block}
@@ -530,3 +530,17 @@ h1{font-size:var(--fs-lg);margin:0;padding-left:8px;border-left:3px solid var(--
 .pick-tag:hover {
   filter: brightness(.92);
 }
+
+/* 标签筛选面板：彩色标签片流式排列 */
+.tag-filter-chips{display:flex;flex-wrap:wrap;gap:6px;max-width:300px;padding:8px 12px}
+.tag-filter-chips .pick-tag{border:1px solid currentColor;font-weight:600;padding:6px 16px}
+.tag-filter-chips .tag-clear{background:var(--gray-100);color:var(--gray-600)}
+.tag-filter-empty{padding:12px;color:var(--gray-500);font-size:var(--fs-sm);white-space:nowrap}
+/* 标签筛选：绝对定位在筛选栏右上角，略低于顶边（filter-bar 是 sticky，可作定位基准） */
+#tagFilterBox{position:absolute;top:12px;right:16px;display:flex;align-items:center;gap:12px}
+/* 面板右对齐触发器，向左展开，避免超出筛选栏右边界 */
+#tagSelect .multi-select-panel{left:auto;right:0}
+/* 标签筛选触发器：比普通下拉突出——图标蓝色、文字加粗，有选中时整框高亮 */
+#tagSelect .multi-select-trigger{font-weight:600}
+#tagSelect .multi-select-trigger svg{color:var(--blue);flex:none}
+#tagSelect.has-sel .multi-select-trigger{border-color:var(--blue);background:var(--blue-50)}
