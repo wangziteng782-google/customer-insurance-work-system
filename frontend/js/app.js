@@ -1195,7 +1195,9 @@ async function openModal(i) {
         else if (ext === '.pdf') type = "pdf";
         else if (ext === '.doc' || ext === '.docx') type = "word";
         else if (ext === '.xls' || ext === '.xlsx') type = "excel";
-        files.push({ name: decodeName(url.split('/').pop()), type: type, size: "", url: url });
+        // 上传时间 = 所属消息的发送时间，与卡片消息列表同款格式
+        files.push({ name: decodeName(url.split('/').pop()), type: type, url: url,
+          time: m.created_at ? String(m.created_at).replace('T', ' ').slice(0, 19) : '' });
       });
     });
     // 提单详情只展示文档附件，不展示图片
@@ -1210,7 +1212,7 @@ async function openModal(i) {
           <div class="file-icon t-${f.type}">${typeLabel[f.type] || "FILE"}</div>
           <div class="file-info">
             <div class="file-name">${f.name}</div>
-            <div class="file-meta">${f.size}</div>
+            <div class="file-meta">${f.time}</div>
           </div>
           <span class="file-dl">${PREVIEWABLE_TYPES[f.type] ? "预览" : "下载"}</span>
         </div>
@@ -1621,7 +1623,37 @@ function ocrCopyResults() {
     const m = line.match(/^(.+?)\s+(\d{17}[\dXx])$/);
     return m ? m[1] + '\t' + m[2] : line;
   }).join('\n');
-  navigator.clipboard.writeText(text).then(() => toast('已复制到剪贴板')).catch(() => toast('复制失败'));
+  if (!text) { toast('识别结果为空'); return; }
+  copyText(text, '已复制到剪贴板');
+}
+
+/**
+ * 复制纯文本到剪贴板。
+ *
+ * 这里**不能**用 navigator.clipboard：内勤页走的是 http://192.168.1.9:8001（非安全上下文），
+ * 浏览器只在 HTTPS 或 localhost 下才提供它 → 在这个页面里它是 undefined，
+ * 调用会同步抛 TypeError（连 .catch 都进不去），表现出来就是"点了按钮毫无反应、也没有提示"。
+ * document.execCommand("copy") 只要求"用户手势"，http 下照常可用 —— 本文件里表格复制一直用的就是它。
+ *
+ * 注意：临时文本框不能 display:none（那样选不中就复制不到），放到视口外即可。
+ */
+function copyText(text, okMsg) {
+  const tmp = document.createElement("textarea");
+  tmp.value = text;
+  tmp.setAttribute("readonly", "");
+  tmp.style.position = "fixed";
+  tmp.style.top = "-1000px";
+  tmp.style.left = "-1000px";
+  document.body.appendChild(tmp);
+  tmp.select();
+  let ok = false;
+  try {
+    ok = document.execCommand("copy");
+  } catch (e) {
+    ok = false;
+  }
+  document.body.removeChild(tmp);
+  toast(ok ? (okMsg || "已复制") : "复制失败，请手动选中后按 Ctrl + C");
 }
 
 function ocrVerify() {
