@@ -544,3 +544,63 @@ h1{font-size:var(--fs-lg);margin:0;padding-left:8px;border-left:3px solid var(--
 #tagSelect .multi-select-trigger{font-weight:600}
 #tagSelect .multi-select-trigger svg{color:var(--blue);flex:none}
 #tagSelect.has-sel .multi-select-trigger{border-color:var(--blue);background:var(--blue-50)}
+
+/* ── 附件在线预览层（Word / Excel / PDF） ── */
+.file-preview{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;padding:24px;z-index:120}
+.file-preview.show{display:flex}
+.fp-panel{width:min(1100px,96vw);height:min(88vh,900px);background:#fff;border-radius:var(--r-md);box-shadow:var(--shadow-lg);display:flex;flex-direction:column;overflow:hidden}
+.fp-head{display:flex;align-items:center;padding:12px 18px;border-bottom:1px solid var(--line);flex:none;gap:12px}
+.fp-name{font-size:var(--fs-sm);font-weight:600;color:var(--gray-900);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.fp-actions{margin-left:auto;display:flex;gap:8px;flex:none}
+.fp-body{flex:1;min-height:0;overflow:auto;background:#f5f6f8}
+.fp-frame{width:100%;height:100%;border:0;background:#fff;display:block}
+.fp-tip{padding:28px;text-align:center;color:var(--gray-500);font-size:var(--fs-sm);line-height:1.9}
+.fp-tip.err{color:#f5222d}
+/* Excel：多 sheet 标签 + 表格 */
+.fp-tabs{display:flex;gap:4px;padding:8px 12px;background:#fff;border-bottom:1px solid var(--line);flex-wrap:wrap;position:sticky;top:0;z-index:2}
+.fp-tab{height:26px;padding:0 12px;border:1px solid var(--gray-200);border-radius:var(--r-xs);background:#fff;font-size:var(--fs-xs);color:var(--gray-600);cursor:pointer}
+.fp-tab.on{border-color:var(--blue);color:var(--blue);background:var(--blue-50);font-weight:600}
+.fp-sheet{padding:12px;overflow:auto}
+.fp-table{border-collapse:collapse;background:#fff;font-size:var(--fs-xs)}
+.fp-table th,.fp-table td{border:1px solid var(--gray-200);padding:4px 8px;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fp-table th{background:#f5f5f5;font-weight:600;position:sticky;top:0}
+/* Word：docx-preview 自带样式，这里只兜底底色与内边距 */
+.fp-docx{background:#fff;padding:16px 20px;min-height:100%}
+
+/* ── Excel 预览：表格视图（行号 / 整行整列选择 / 排序 / 筛选） ── */
+.fp-sheet-wrap{display:flex;flex-direction:column;min-height:100%}
+.fp-sheet-bar{position:sticky;top:0;z-index:3;display:flex;align-items:center;gap:10px;padding:7px 12px;background:#fff;border-bottom:1px solid var(--line);font-size:var(--fs-xs);color:var(--gray-500);flex-wrap:wrap}
+.fp-sheet-bar .fp-sel{color:var(--gray-800);font-weight:600}
+.fp-sheet-bar .sp{flex:1}
+.fp-mini{height:24px;padding:0 10px;border:1px solid var(--gray-200);border-radius:var(--r-xs);background:#fff;font-size:var(--fs-xs);color:var(--gray-600);cursor:pointer;white-space:nowrap}
+.fp-mini:hover{border-color:var(--blue);color:var(--blue)}
+.fp-sheet-scroll{flex:1;overflow:auto}
+/* 列头（可点选整列 / 打开筛选） */
+.fp-table th.fp-colhead{position:sticky;top:0;z-index:2;cursor:pointer}
+.fp-table th.fp-colhead:hover{background:var(--blue-50)}
+.fp-table th.fp-colhead.on{color:var(--blue)}
+.fp-table th.fp-colhead.open{overflow:visible;z-index:6}
+.fp-colname{display:inline-block;max-width:200px;overflow:hidden;text-overflow:ellipsis;vertical-align:bottom}
+.fp-fbtn{margin-left:3px;padding:0 2px;border:0;background:transparent;color:var(--gray-400);cursor:pointer;font-size:10px;line-height:1}
+.fp-fbtn:hover{color:var(--blue)}
+.fp-fbtn.on{color:var(--blue);font-weight:700}
+.fp-sort-mark{font-size:9px;color:var(--blue)}
+/* 行号列 + 选中态 */
+.fp-table th.fp-corner{position:sticky;top:0;left:0;z-index:5;cursor:pointer;background:#f5f5f5}
+.fp-table td.fp-rowno{position:sticky;left:0;z-index:1;background:#fafafa;color:var(--gray-400);text-align:center;cursor:pointer;user-select:none;min-width:34px}
+.fp-table td.fp-rowno:hover{background:var(--blue-50);color:var(--blue)}
+.fp-table tr.row-sel td{background:var(--blue-50)}
+.fp-table td.col-sel{background:var(--blue-50)}
+.fp-table tr.row-sel td.fp-rowno{background:var(--blue);color:#fff}
+/* 筛选 / 排序面板 */
+.fp-filter{position:absolute;top:100%;left:0;z-index:9;width:244px;background:#fff;border:1px solid var(--gray-200);border-radius:var(--r-xs);box-shadow:var(--shadow-lg);padding:8px;text-align:left;font-weight:400;color:var(--gray-700)}
+.fp-filter input[type=text]{width:100%;height:26px;border:1px solid var(--gray-200);border-radius:var(--r-xs);padding:0 8px;font-size:var(--fs-xs);margin-bottom:6px}
+.fp-filter-links{display:flex;gap:12px;margin-bottom:6px;font-size:var(--fs-xs)}
+.fp-filter-links a{color:var(--blue);cursor:pointer}
+.fp-filter-list{max-height:170px;overflow:auto;border:1px solid var(--gray-200);border-radius:var(--r-xs);padding:4px 6px}
+.fp-filter-list label{display:flex;align-items:center;gap:6px;font-size:var(--fs-xs);padding:2px 0;cursor:pointer;font-weight:400;color:var(--gray-700)}
+.fp-filter-list label span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fp-filter-list label em{color:var(--gray-400);font-style:normal;font-size:10px}
+.fp-filter-list .fp-none{color:var(--gray-400);font-size:var(--fs-xs);padding:6px 0;text-align:center}
+.fp-filter-sort{display:flex;gap:6px;margin-top:7px}
+.fp-filter-sort .fp-mini{flex:1}

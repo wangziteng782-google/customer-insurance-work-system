@@ -59,7 +59,7 @@ class User(Base):
     display_name = Column(String(50), nullable=True)
     phone = Column(String(20), nullable=True, comment="手机号")
     password = Column(String(100), nullable=True, comment="密码（bcrypt哈希）")
-    role = Column(Integer, default=1, comment="0管理员/1客服(提单人)/2内勤(做单人)")
+    role = Column(Integer, default=1, comment="0管理员/1客服(提单人)/11客服主管/2内勤(做单人)/22内勤主管")
     can_manage_dropdowns = Column(TINYINT, default=0, comment="可管理下拉选项")
     created_at = Column(DateTime, server_default=func.now())
 

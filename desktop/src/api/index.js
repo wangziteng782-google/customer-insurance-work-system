@@ -4,7 +4,7 @@
  */
 
 // 后端 API 地址，按实际部署修改（与 client/api.py 中 BASE_URL 一致）
-export const BASE_URL = "http://192.168.1.9:8001";
+export const BASE_URL = "http://192.168.1.7:8001";
 
 // token 持久化 key（PySide 版存 ~/.insurance_token，这里用 localStorage 等价实现）
 const TOKEN_KEY = "insurance_token";

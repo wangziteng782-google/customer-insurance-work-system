@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>易梯保险系统</title>
 <link rel="icon" href="images/logo.png" type="image/png">
-<link rel="stylesheet" href="css/style.css?v=2">
+<link rel="stylesheet" href="css/style.css?v=4">
 <script>
   if (!localStorage.getItem('token')) location.href = 'login.html';
 </script>
@@ -156,7 +156,7 @@
       <section class="section">
         <div class="section-head">
           <div class="section-name">附件<span class="section-count" id="fileCount">0 个</span></div>
-          <span class="muted">点击可下载</span>
+          <span class="muted">点击可预览 · 预览层右上角可下载原件</span>
         </div>
         <div class="file-list" id="fileList"></div>
       </section>
@@ -420,9 +420,23 @@
   <span class="img-viewer-tag" id="imgViewerTag"></span>
 </div>
 
+<!-- 附件在线预览层：Word / Excel 就地在页面里渲染，PDF 内嵌浏览器阅读器 -->
+<div class="file-preview" id="filePreviewMask" onclick="onFilePreviewMaskClick(event)">
+  <div class="fp-panel">
+    <div class="fp-head">
+      <span class="fp-name" id="filePreviewName"></span>
+      <span class="fp-actions">
+        <a class="btn" id="filePreviewDl" download>下载原件</a>
+        <button class="btn" onclick="closeFilePreview()">关闭</button>
+      </span>
+    </div>
+    <div class="fp-body" id="filePreviewBody"></div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
-<script src="js/app.js"></script>
+<script src="js/app.js?v=5"></script>
 <script>
   // 填充登录用户信息
   var u = JSON.parse(localStorage.getItem('currentUser') || '{}');
@@ -430,7 +444,7 @@
     document.getElementById('headerAvatar').textContent = u.display_name.charAt(0);
     document.getElementById('headerName').textContent = u.display_name;
   }
-  var roleMap = {0: '管理员', 1: '客服', 2: '保险内勤'};
+  var roleMap = {0: '管理员', 1: '客服', 11: '客服主管', 2: '保险内勤', 22: '内勤主管'};
   if (u.role != null) {
     document.getElementById('headerRole').textContent = roleMap[u.role] || '用户';
   }

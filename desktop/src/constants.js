@@ -49,11 +49,13 @@ export function extractCustomerCompany(text) {
   return m ? m[1].trim() : "";
 }
 
-/** 用户角色：0管理员/1客服(提单人)/2内勤(做单人) */
+/** 用户角色：0管理员/1客服(提单人)/11客服主管/2内勤(做单人)/22内勤主管 */
 export const ROLE_MAP = {
   0: "管理员",
   1: "客服",
+  11: "客服主管",
   2: "保险内勤",
+  22: "内勤主管",
 };
 
 export function roleLabel(role) {

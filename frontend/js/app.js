@@ -104,7 +104,8 @@ async function loadUsers() {
     const resp = await authFetch('/api/users');
     if (!resp.ok) return;
     const users = await resp.json();
-    allUsers = users.filter(u => u.role === 1).map(u => u.display_name);
+    // 客服人员筛选：客服(1) + 客服主管(11) 都是提单人，只显示名称不显示角色
+    allUsers = users.filter(u => u.role === 1 || u.role === 11).map(u => u.display_name);
   } catch {}
 }
 
@@ -453,7 +454,6 @@ function render() {
 
 async function selectCompany(name, el) {
   currentCompany = name;
-  selected = [];
   document.querySelectorAll(".company").forEach(x => x.classList.remove("active"));
   el.classList.add("active");
   try {
@@ -473,6 +473,27 @@ document.addEventListener("click", e => {
   document.querySelectorAll(".multi-select.on").forEach(el => {
     if (!el.contains(e.target)) el.classList.remove("on");
   });
+});
+
+// 消息区复制到 Excel：浏览器默认同时放 text/plain（带 \n）和 text/html（裸 \n 会被
+// 折叠成空格）进剪贴板，Excel 优先读 HTML 就全挤成一行。这里拦截消息区的复制，
+// HTML 改用 <table> 每行一个 <tr>，Excel 逐行成行；纯数字长编号（身份证等）加
+// mso 文本格式标记防止丢精度（复用 Excel 预览复制的 isExcelIdLike / fpEsc）。
+document.addEventListener("copy", e => {
+  const sel = window.getSelection();
+  if (!sel || sel.isCollapsed || !sel.rangeCount) return;
+  const node = sel.anchorNode;
+  const el = node && (node.nodeType === 3 ? node.parentElement : node);
+  if (!el || !el.closest(".msg-block")) return;
+  const text = sel.toString();
+  const lines = text.split("\n");
+  const html = "<table>" + lines.map(line =>
+    "<tr><td" + (isExcelIdLike(line.trim()) ? " style=\"mso-number-format:'\\@'\"" : "")
+    + ">" + fpEsc(line) + "</td></tr>"
+  ).join("") + "</table>";
+  e.clipboardData.setData("text/plain", text);
+  e.clipboardData.setData("text/html", html);
+  e.preventDefault();
 });
 
 function toggleUser(user) {
@@ -547,6 +568,610 @@ document.addEventListener("click", function (e) {
 // ── 详情弹窗 ──
 
 let currentModalTask = null;
+let modalFiles = [];   // 当前详情弹窗里的文档附件（点击时按序号取）
+
+// ── 附件在线预览（Word / Excel 就地渲染，PDF 内嵌浏览器阅读器）──
+// 库文件放在 js/vendor/，第一次点预览才按需加载，首屏不变慢。
+// 七牛已开跨域（Access-Control-Allow-Origin: *），所以前端能直接 fetch 到文件内容。
+const PREVIEWABLE_TYPES = { pdf: 1, word: 1, excel: 1 };
+const PREVIEW_MAX_MB = 20;      // 超过只给下载，避免卡住浏览器
+const SHEET_MAX_ROWS = 500;     // Excel 只渲染前 N 行
+
+/** 点击附件：能预览的就地预览，其余照旧新窗口打开 */
+function openFileAt(idx) {
+  const f = modalFiles[idx];
+  if (!f) return;
+  if (PREVIEWABLE_TYPES[f.type]) openFilePreview(f);
+  else window.open(f.url, "_blank");
+}
+
+/** 动态注入脚本（同一个库只加载一次） */
+function loadScriptOnce(src) {
+  return new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = src;
+    s.onload = resolve;
+    s.onerror = () => reject(new Error("库加载失败：" + src));
+    document.head.appendChild(s);
+  });
+}
+
+/** 按文件类型确保依赖库就绪（docx-preview 依赖先加载好的 JSZip） */
+async function ensurePreviewLibs(type) {
+  if (type === "excel") {
+    if (!window.XLSX) await loadScriptOnce("js/vendor/xlsx.full.min.js");
+    if (!window.XLSX) throw new Error("Excel 解析库未就绪");
+    return;
+  }
+  if (!window.JSZip) await loadScriptOnce("js/vendor/jszip.min.js");
+  if (!window.docx) await loadScriptOnce("js/vendor/docx-preview.min.js");
+  if (!window.docx) throw new Error("Word 渲染库未就绪");
+}
+
+/** 打开预览层 */
+function openFilePreview(f) {
+  document.getElementById("filePreviewName").textContent = f.name;
+  const dl = document.getElementById("filePreviewDl");
+  dl.href = f.url;
+  dl.setAttribute("download", f.name);
+  const body = document.getElementById("filePreviewBody");
+  body.innerHTML = '<div class="fp-tip">正在加载预览…</div>';
+  document.getElementById("filePreviewMask").classList.add("show");
+
+  if (f.type === "pdf") {
+    // 用 iframe 内嵌：走浏览器自带 PDF 阅读器，也不会被"PDF 一律下载"的设置拦下
+    body.textContent = "";
+    const frame = document.createElement("iframe");
+    frame.className = "fp-frame";
+    frame.src = f.url;
+    body.appendChild(frame);
+    return;
+  }
+
+  renderOfficePreview(f, body).catch(err => {
+    console.warn("预览失败:", err);
+    body.textContent = "";
+    const tip = document.createElement("div");
+    tip.className = "fp-tip err";
+    tip.textContent = "预览失败：" + (err && err.message ? err.message : err) + "，可点右上角「下载原件」查看";
+    body.appendChild(tip);
+  });
+}
+
+/** Word / Excel：取回字节后就地渲染 */
+async function renderOfficePreview(f, body) {
+  await ensurePreviewLibs(f.type);
+  const resp = await fetch(f.url);
+  if (!resp.ok) throw new Error("HTTP " + resp.status);
+  const buf = await resp.arrayBuffer();
+  const sizeMb = buf.byteLength / 1048576;
+  if (sizeMb > PREVIEW_MAX_MB) {
+    throw new Error("文件较大（" + sizeMb.toFixed(1) + "MB）");
+  }
+  body.textContent = "";
+
+  if (f.type === "word") {
+    // docx-preview 把 docx 渲染成 DOM（保留表格 / 图片 / 基本版式）
+    await window.docx.renderAsync(buf, body, null, {
+      className: "fp-docx",
+      inWrapper: true,
+      ignoreWidth: false,
+      ignoreHeight: true,
+    });
+    return;
+  }
+
+  const wb = window.XLSX.read(buf, { type: "array" });
+  // 隐藏的工作表 Excel 里本来就不显示，预览也跟着不列（工作簿里有 Sheet1 之外的辅助表时会清爽很多）
+  const sheetMeta = (wb.Workbook && wb.Workbook.Sheets) || [];
+  const names = (wb.SheetNames || []).filter((n, i) => !(sheetMeta[i] && sheetMeta[i].Hidden));
+  if (!names.length) throw new Error("文件里没有可显示的工作表");
+
+  const tabs = document.createElement("div");
+  tabs.className = "fp-tabs";
+  const pane = document.createElement("div");
+  pane.className = "fp-sheet";
+  // 每个 sheet 一份视图状态（筛选/排序/选择），切标签回来不丢
+  const views = new Map();
+  const show = name => showSheet(wb.Sheets[name], pane, views, name);
+  names.forEach((name, i) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "fp-tab" + (i === 0 ? " on" : "");
+    b.textContent = name;
+    b.onclick = () => {
+      tabs.querySelectorAll(".fp-tab").forEach(x => x.classList.remove("on"));
+      b.classList.add("on");
+      show(name);
+    };
+    tabs.appendChild(b);
+  });
+  body.appendChild(tabs);
+  body.appendChild(pane);
+  show(names[0]);
+}
+
+/**
+ * 判断是不是"编号型"的数字：复制到 Excel 时要按文本处理
+ *
+ * ① 纯数字且 ≥15 位：超出 Excel 的 15 位有效数字，粘贴过去会丢精度（311021110320213000 → 3.11021E+17）
+ * ② 以 0 开头：粘贴后前导 0 会被吃掉（001234 → 123）
+ * 其它数字照常按数字粘贴（金额、数量等还能直接求和）
+ */
+function isExcelIdLike(text) {
+  return /^\d{15,}$/.test(text) || /^0\d+$/.test(text);
+}
+
+// ── Excel 预览：表格视图（行号 / 整行整列选择 / 排序 / 筛选 / 复制所选）──
+const FP_FILTER_MAX_VALUES = 500;   // 单列可选值上限，超了用搜索
+
+function cellText(v) {
+  return v == null ? "" : String(v);
+}
+
+/** 看起来是数字（用于排序：避免 10 排在 9 前面） */
+function isNumericLike(t) {
+  return /^-?\d+(\.\d+)?$/.test(t);
+}
+
+/** 单元格比较：数字按数值，其余按中文排序；空值排最前 */
+function compareCells(a, b) {
+  if (a === b) return 0;
+  if (!a) return -1;
+  if (!b) return 1;
+  if (isNumericLike(a) && isNumericLike(b)) return Number(a) - Number(b);
+  return a.localeCompare(b, "zh");
+}
+
+function fpEsc(text) {
+  return String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/** 首次打开某 sheet 时解析数据成视图状态（之后复用，切标签回来筛选/排序还在） */
+function getSheetView(views, name, sheet) {
+  if (views && name && views.has(name)) return views.get(name);
+  const all = window.XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: "" });
+  const header = (all[0] || []).map(cellText);
+  const body = all.slice(1, SHEET_MAX_ROWS + 1).map(r => (r || []).map(cellText));
+  const colCount = Math.max(header.length, ...body.map(r => r.length), 0);
+  while (header.length < colCount) header.push("");
+  body.forEach(r => { while (r.length < colCount) r.push(""); });
+  const st = {
+    header, body, colCount,
+    totalRows: all.length - 1,
+    truncated: all.length - 1 > body.length,
+    filters: {},     // 列号 → Set(保留显示的值)
+    sort: null,      // { col, dir: 1 | -1 }
+    sel: null,       // { type: 'row' | 'col', from, to }
+    anchor: null,    // Shift 连选的锚点
+    forceCopy: false,
+  };
+  if (views && name) views.set(name, st);
+  return st;
+}
+
+/** 当前筛选 + 排序后的数据行下标（相对 body） */
+function visibleRows(st) {
+  let idx = st.body.map((_, i) => i);
+  const cols = Object.keys(st.filters);
+  if (cols.length) {
+    idx = idx.filter(i => cols.every(c => st.filters[c].has(st.body[i][c] || "")));
+  }
+  if (st.sort) {
+    const { col, dir } = st.sort;
+    idx = idx.slice().sort((i, j) => compareCells(st.body[i][col], st.body[j][col]) * dir);
+  }
+  return idx;
+}
+
+/** 某列的取值 → 出现次数 */
+function columnValueMap(st, c) {
+  const m = new Map();
+  for (const r of st.body) {
+    const v = r[c] || "";
+    m.set(v, (m.get(v) || 0) + 1);
+  }
+  return m;
+}
+
+/** 一个工作表 → 可交互表格（数据全用 textContent 赋值，不拼 innerHTML） */
+function showSheet(sheet, pane, views, name) {
+  pane.textContent = "";
+  if (!sheet) return;
+  const st = getSheetView(views, name, sheet);
+  if (!st.colCount && !st.body.length) {
+    const tip = document.createElement("div");
+    tip.className = "fp-tip";
+    tip.textContent = "（空工作表）";
+    pane.appendChild(tip);
+    return;
+  }
+  const wrap = document.createElement("div");
+  wrap.className = "fp-sheet-wrap";
+  const bar = document.createElement("div");
+  bar.className = "fp-sheet-bar";
+  const scroll = document.createElement("div");
+  scroll.className = "fp-sheet-scroll";
+  wrap.appendChild(bar);
+  wrap.appendChild(scroll);
+  pane.appendChild(wrap);
+
+  st.wrap = wrap;
+  st.bar = bar;
+  st.scroll = scroll;
+  closeFilterPanel(st);                       // 换 sheet 时旧面板失效
+  scroll.addEventListener("click", e => onSheetClick(st, e));
+  scroll.addEventListener("scroll", () => closeFilterPanel(st));
+
+  paintSheet(st);
+  currentSheetState = st;
+}
+
+/** 重绘表格与状态行（筛选 / 排序 / 选择变化时调用） */
+function paintSheet(st) {
+  const vis = visibleRows(st);
+  st.visible = vis;
+
+  // ── 状态行 ──
+  st.bar.textContent = "";
+  const info = document.createElement("span");
+  info.className = "fp-sel";
+  let selText = "未选择";
+  if (st.sel) {
+    const n = st.sel.to - st.sel.from + 1;
+    selText = st.sel.type === "row" ? "已选 " + n + " 行" : "已选 " + n + " 列";
+  }
+  info.textContent = selText + " · 显示 " + vis.length + " / " + st.body.length + " 行";
+  st.bar.appendChild(info);
+
+  if (st.truncated) {
+    const tip = document.createElement("span");
+    tip.textContent = "（原表共 " + st.totalRows + " 行，仅载入前 " + st.body.length + " 行）";
+    st.bar.appendChild(tip);
+  }
+  const hint = document.createElement("span");
+  hint.textContent = "支持 Ctrl+C 复制所选";
+  st.bar.appendChild(hint);
+
+  const sp = document.createElement("span");
+  sp.className = "sp";
+  st.bar.appendChild(sp);
+
+  const mkBtn = (label, fn) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "fp-mini";
+    b.textContent = label;
+    b.onclick = fn;
+    return b;
+  };
+  st.bar.appendChild(mkBtn("复制所选", () => copySelection(st)));
+  if (Object.keys(st.filters).length || st.sort) {
+    st.bar.appendChild(mkBtn("清除筛选/排序", () => {
+      st.filters = {};
+      st.sort = null;
+      paintSheet(st);
+      closeFilterPanel(st);
+    }));
+  }
+
+  // ── 表头 ──
+  const table = document.createElement("table");
+  table.className = "fp-table";
+  const thead = document.createElement("thead");
+  const htr = document.createElement("tr");
+  const corner = document.createElement("th");
+  corner.className = "fp-corner";
+  corner.title = "全选（复制整张表）";
+  htr.appendChild(corner);
+  for (let c = 0; c < st.colCount; c++) {
+    const th = document.createElement("th");
+    th.className = "fp-colhead";
+    th.dataset.c = c;
+    if (st.sel && st.sel.type === "col" && c >= st.sel.from && c <= st.sel.to) th.classList.add("on");
+    const nm = document.createElement("span");
+    nm.className = "fp-colname";
+    nm.textContent = st.header[c] || "第" + (c + 1) + "列";
+    th.appendChild(nm);
+    if (st.sort && st.sort.col === c) {
+      const mark = document.createElement("span");
+      mark.className = "fp-sort-mark";
+      mark.textContent = st.sort.dir === 1 ? " ▲" : " ▼";
+      th.appendChild(mark);
+    }
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "fp-fbtn" + (st.filters[c] ? " on" : "");
+    btn.title = "筛选 / 排序";
+    btn.textContent = "▾";
+    th.appendChild(btn);
+    htr.appendChild(th);
+  }
+  thead.appendChild(htr);
+  table.appendChild(thead);
+
+  // ── 表体 ──
+  const tbody = document.createElement("tbody");
+  vis.forEach((ri, vi) => {
+    const tr = document.createElement("tr");
+    if (st.sel && st.sel.type === "row" && vi >= st.sel.from && vi <= st.sel.to) {
+      tr.className = "row-sel";
+    }
+    const no = document.createElement("td");
+    no.className = "fp-rowno";
+    no.dataset.r = vi;
+    no.textContent = String(ri + 1);
+    tr.appendChild(no);
+    for (let c = 0; c < st.colCount; c++) {
+      const td = document.createElement("td");
+      const text = st.body[ri][c] || "";
+      td.textContent = text;
+      // 编号型数字带上 Excel 的"文本格式"标记：复制出去的 HTML 会被 Excel 读取，
+      // 这样粘贴过去仍是原文（18 位不丢精度、前导 0 不丢）
+      if (isExcelIdLike(text)) {
+        td.setAttribute("style", "mso-number-format:'\\@'");
+      }
+      if (st.sel && st.sel.type === "col" && c >= st.sel.from && c <= st.sel.to) {
+        td.classList.add("col-sel");
+      }
+      tr.appendChild(td);
+    }
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+
+  st.scroll.textContent = "";
+  st.scroll.appendChild(table);
+}
+
+/** 表格内的点击分派：列头=选整列、行号=选整行、▾=筛选面板 */
+function onSheetClick(st, e) {
+  const btn = e.target.closest && e.target.closest(".fp-fbtn");
+  if (btn) {
+    const c = Number(btn.closest("th").dataset.c);
+    if (st.openFilterCol === c) closeFilterPanel(st);
+    else openFilterPanel(st, c);
+    return;
+  }
+  const th = e.target.closest && e.target.closest("th.fp-colhead");
+  if (th) {
+    selectColumn(st, Number(th.dataset.c), e.shiftKey);
+    return;
+  }
+  if (e.target.closest && e.target.closest("th.fp-corner")) {
+    st.anchor = { type: "row", from: 0 };
+    st.sel = { type: "row", from: 0, to: Math.max(0, (st.visible || []).length - 1) };
+    paintSheet(st);
+    return;
+  }
+  const rowNo = e.target.closest && e.target.closest("td.fp-rowno");
+  if (rowNo) selectRow(st, Number(rowNo.dataset.r), e.shiftKey);
+}
+
+function selectRow(st, vi, extend) {
+  if (!extend || !st.anchor || st.anchor.type !== "row") st.anchor = { type: "row", from: vi };
+  const a = st.anchor.from;
+  st.sel = { type: "row", from: Math.min(a, vi), to: Math.max(a, vi) };
+  paintSheet(st);
+}
+
+function selectColumn(st, c, extend) {
+  if (!extend || !st.anchor || st.anchor.type !== "col") st.anchor = { type: "col", from: c };
+  const a = st.anchor.from;
+  st.sel = { type: "col", from: Math.min(a, c), to: Math.max(a, c) };
+  paintSheet(st);
+}
+
+// ── 筛选 / 排序面板 ──
+
+function closeFilterPanel(st) {
+  if (st.openFilterPanel) {
+    st.openFilterPanel.remove();
+    st.openFilterPanel = null;
+  }
+  st.openFilterCol = null;
+}
+
+function openFilterPanel(st, c) {
+  closeFilterPanel(st);
+  const th = st.scroll.querySelector('th.fp-colhead[data-c="' + c + '"]');
+  if (!th) return;
+  st.openFilterCol = c;
+
+  const panel = document.createElement("div");
+  panel.className = "fp-filter";
+
+  const search = document.createElement("input");
+  search.type = "text";
+  search.placeholder = "搜索值…";
+  panel.appendChild(search);
+
+  const links = document.createElement("div");
+  links.className = "fp-filter-links";
+  const allBtn = document.createElement("a");
+  allBtn.textContent = "全选";
+  const noneBtn = document.createElement("a");
+  noneBtn.textContent = "清空";
+  links.appendChild(allBtn);
+  links.appendChild(noneBtn);
+  panel.appendChild(links);
+
+  const list = document.createElement("div");
+  list.className = "fp-filter-list";
+  panel.appendChild(list);
+
+  const sortRow = document.createElement("div");
+  sortRow.className = "fp-filter-sort";
+  const mkMini = (label, fn) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "fp-mini";
+    b.textContent = label;
+    b.onclick = fn;
+    return b;
+  };
+  sortRow.appendChild(mkMini("升序", () => { st.sort = { col: c, dir: 1 }; paintSheet(st); }));
+  sortRow.appendChild(mkMini("降序", () => { st.sort = { col: c, dir: -1 }; paintSheet(st); }));
+  sortRow.appendChild(mkMini("取消排序", () => { st.sort = null; paintSheet(st); }));
+  panel.appendChild(sortRow);
+
+  const values = columnValueMap(st, c);
+  const entries = [...values.entries()].sort((a, b) => compareCells(a[0], b[0]));
+  const boxes = () => Array.from(list.querySelectorAll("input[type=checkbox]"));
+
+  const applyChecked = () => {
+    const picked = new Set(boxes().filter(x => x.checked).map(x => x.value));
+    if (picked.size >= values.size) delete st.filters[c];   // 全选 = 该列不筛选
+    else st.filters[c] = picked;
+    paintSheet(st);
+  };
+  allBtn.onclick = () => { boxes().forEach(x => { x.checked = true; }); applyChecked(); };
+  noneBtn.onclick = () => { boxes().forEach(x => { x.checked = false; }); applyChecked(); };
+
+  const renderList = () => {
+    const kw = search.value.trim().toLowerCase();
+    const keep = st.filters[c];
+    list.textContent = "";
+    const shown = entries.filter(([v]) => !kw || String(v).toLowerCase().includes(kw));
+    if (entries.length > FP_FILTER_MAX_VALUES) {
+      const t = document.createElement("div");
+      t.className = "fp-none";
+      t.textContent = "该列取值较多，请用上面搜索";
+      list.appendChild(t);
+    }
+    shown.slice(0, FP_FILTER_MAX_VALUES).forEach(([v, n]) => {
+      const label = document.createElement("label");
+      const box = document.createElement("input");
+      box.type = "checkbox";
+      box.value = v;
+      box.checked = keep ? keep.has(v) : true;
+      box.onchange = applyChecked;
+      const span = document.createElement("span");
+      span.textContent = v || "（空白）";
+      const cnt = document.createElement("em");
+      cnt.textContent = String(n);
+      label.appendChild(box);
+      label.appendChild(span);
+      label.appendChild(cnt);
+      list.appendChild(label);
+    });
+    if (!shown.length) {
+      const t = document.createElement("div");
+      t.className = "fp-none";
+      t.textContent = "没有匹配的值";
+      list.appendChild(t);
+    }
+  };
+  renderList();
+  search.oninput = renderList;
+
+  // 面板挂在 wrap 上（不放在 th 里）—— 这样重绘表格不会把它弄没
+  st.wrap.style.position = "relative";
+  st.wrap.appendChild(panel);
+  const wr = st.wrap.getBoundingClientRect();
+  const tr = th.getBoundingClientRect();
+  let left = tr.left - wr.left;
+  if (left + 244 > st.wrap.clientWidth) left = Math.max(0, st.wrap.clientWidth - 244);
+  panel.style.left = left + "px";
+  panel.style.top = (tr.bottom - wr.top) + "px";
+  st.openFilterPanel = panel;
+  search.focus();
+}
+
+// ── 复制所选（整行 / 整列）──
+
+function buildCopyRows(st) {
+  if (!st.sel) return null;
+  const vis = st.visible || visibleRows(st);
+  const out = [];
+  const allCols = [];
+  for (let c = 0; c < st.colCount; c++) allCols.push(c);
+  if (st.sel.type === "col") {
+    const cols = allCols.filter(c => c >= st.sel.from && c <= st.sel.to);
+    out.push(cols.map(c => st.header[c] || ""));          // 选整列时连表头一起（与 Excel 一致）
+    vis.forEach(i => out.push(cols.map(c => st.body[i][c] || "")));
+  } else {
+    vis.forEach((i, vi) => {
+      if (vi < st.sel.from || vi > st.sel.to) return;
+      out.push(allCols.map(c => st.body[i][c] || ""));
+    });
+  }
+  return out;
+}
+
+function copySelection(st) {
+  const rows = buildCopyRows(st);
+  if (!rows || !rows.length) {
+    toast("先点左侧行号或表头，选中整行 / 整列");
+    return;
+  }
+  st.forceCopy = true;
+  let ok = false;
+  try {
+    ok = document.execCommand("copy");
+  } catch (e) {
+    ok = false;
+  }
+  st.forceCopy = false;
+  if (!ok) toast("复制失败，请按 Ctrl + C");
+}
+
+let currentSheetState = null;
+
+document.addEventListener("copy", e => {
+  const st = currentSheetState;
+  if (!st || !st.sel || !st.scroll || !document.body.contains(st.scroll)) return;
+  if (!st.forceCopy) {
+    const sel = window.getSelection();
+    // 用户自己在拖选文字 → 交给浏览器默认行为（含之前修好的长数字文本格式）
+    if (sel && !sel.isCollapsed && String(sel).trim()) return;
+  }
+  const rows = buildCopyRows(st);
+  if (!rows) return;
+  e.preventDefault();
+  const text = rows.map(r => r.map(t => t.replace(/[\t\r\n]/g, " ")).join("\t")).join("\n");
+  const html = "<table>" + rows.map(r => "<tr>" + r.map(t => {
+    const style = isExcelIdLike(t) ? " style=\"mso-number-format:'\\@'\"" : "";
+    return "<td" + style + ">" + fpEsc(t) + "</td>";
+  }).join("") + "</tr>").join("") + "</table>";
+  e.clipboardData.setData("text/plain", text);
+  e.clipboardData.setData("text/html", html);
+  toast("已复制 " + rows.length + " 行 × " + (rows[0] ? rows[0].length : 0) + " 列");
+});
+
+document.addEventListener("click", e => {
+  const st = currentSheetState;
+  if (!st || !st.openFilterPanel) return;
+  if (st.openFilterPanel.contains(e.target)) return;
+  if (e.target.closest && e.target.closest(".fp-fbtn")) return;
+  closeFilterPanel(st);
+});
+
+function closeFilePreview() {
+  const mask = document.getElementById("filePreviewMask");
+  if (!mask) return;
+  mask.classList.remove("show");
+  // 清空内容：iframe 里的 PDF 会继续占用内存，关掉就释放
+  document.getElementById("filePreviewBody").textContent = "";
+  currentSheetState = null;
+}
+
+/** 点遮罩空白处关闭（点面板内部不关） */
+function onFilePreviewMaskClick(e) {
+  if (e.target && e.target.id === "filePreviewMask") closeFilePreview();
+}
+
+document.addEventListener("keydown", e => {
+  if (e.key !== "Escape") return;
+  // 先关「筛选/排序」面板，再关整个预览层
+  if (currentSheetState && currentSheetState.openFilterPanel) {
+    closeFilterPanel(currentSheetState);
+    return;
+  }
+  if (document.getElementById("filePreviewMask").classList.contains("show")) {
+    closeFilePreview();
+  }
+});
 
 async function openModal(i) {
   const task = renderedTasks[i];
@@ -578,14 +1203,16 @@ async function openModal(i) {
     document.getElementById("fileCount").textContent = docFiles.length + " 个";
     const typeLabel = { pdf: "PDF", excel: "XLS", word: "DOC", image: "IMG" };
     if (docFiles.length) {
-      fileList.innerHTML = docFiles.map(f => `
-        <div class="file-item" onclick="window.open('${f.url}', '_blank')">
+      // 点击时按序号取（不把文件名/URL 拼进 onclick 属性，避免引号把属性截断）
+      modalFiles = docFiles;
+      fileList.innerHTML = docFiles.map((f, idx) => `
+        <div class="file-item" onclick="openFileAt(${idx})">
           <div class="file-icon t-${f.type}">${typeLabel[f.type] || "FILE"}</div>
           <div class="file-info">
             <div class="file-name">${f.name}</div>
             <div class="file-meta">${f.size}</div>
           </div>
-          <span class="file-dl">下载</span>
+          <span class="file-dl">${PREVIEWABLE_TYPES[f.type] ? "预览" : "下载"}</span>
         </div>
       `).join("");
     } else {
@@ -756,13 +1383,20 @@ function closeOcrModal() {
   document.getElementById("ocrMask").classList.remove("show");
 }
 
-let viewerRot = 0;
+let viewerRot = 0, viewerScale = 1;
+
+function viewerApply() {
+  document.getElementById("imgViewerSrc").style.transform =
+    `rotate(${viewerRot}deg) scale(${viewerScale})`;
+}
+
 function openImgViewer(src, tag) {
   viewerRot = 0;
+  viewerScale = 1;
   const img = document.getElementById("imgViewerSrc");
   // 展示用 1600 版本（原图 11MB 要等 4.5s）；下载链接仍指向原图
   img.src = qiniuImg(src, VIEW_WIDTH);
-  img.style.transform = "rotate(0deg)";
+  viewerApply();
   document.getElementById("imgViewerTag").textContent = tag || "";
   // 设置下载链接（原图）
   const dl = document.getElementById("imgViewerDl");
@@ -772,8 +1406,15 @@ function openImgViewer(src, tag) {
 }
 function viewerRotate() {
   viewerRot += 90;
-  document.getElementById("imgViewerSrc").style.transform = `rotate(${viewerRot}deg)`;
+  viewerApply();
 }
+
+// 滚轮缩放：以图片中心缩放（复用现有 .2s 过渡），1~8 倍，打开时复位
+document.getElementById("imgViewer").addEventListener("wheel", e => {
+  e.preventDefault();
+  viewerScale = Math.min(8, Math.max(1, viewerScale * (e.deltaY < 0 ? 1.2 : 1 / 1.2)));
+  viewerApply();
+});
 function closeImgViewer() { document.getElementById("imgViewer").classList.remove("show"); }
 
 // ── 缩略图：勾选 / 全选 / 拖拽 / 批量下载 ──
