@@ -195,7 +195,7 @@ h1{font-size:var(--fs-lg);margin:0;padding-left:8px;border-left:3px solid var(--
 .v-warn{color:#d48806}
 .unread-dot{position:absolute;border-radius:50%;background:#f5222d;border:2px solid #fff;z-index:3}
 .unread-dot.company{width:7px;height:7px;margin-left:4px;display:inline-block;vertical-align:middle;position:static;border:none}
-.unread-dot.ocr{width:8px;height:8px;top:4px;right:4px}
+.unread-dot.ocr{width:14px;height:14px;top:4px;right:4px}
 .unread-dot.msg{width:7px;height:7px;flex-shrink:0;margin-top:6px;position:static;border:none}
 /* 提单消息卡片左上角红点：带白圈（卡片会被 overflow:hidden 裁切，所以贴在卡片内侧角上），
    与侧栏保险公司的 .new-flag 区分开 */
@@ -285,6 +285,8 @@ h1{font-size:var(--fs-lg);margin:0;padding-left:8px;border-left:3px solid var(--
 .ocr-right-head{display:flex;justify-content:space-between;align-items:center}
 .ocr-summary{flex:1;min-height:100%;resize:none}
 .ocr-loading{display:flex;align-items:center;gap:10px;padding:40px 20px;justify-content:center;color:var(--gray-500);font-size:var(--fs-sm)}
+/* 识别中：文本框上方的紧凑进度条（不覆盖文本框） */
+.ocr-loading.ocr-running{padding:8px 12px;justify-content:flex-start}
 .ocr-loading .spinner{width:20px;height:20px;border:2px solid var(--blue-200);border-top-color:var(--blue);border-radius:50%;animation:ocrspin .7s linear infinite}
 @keyframes ocrspin{to{transform:rotate(360deg)}}
 

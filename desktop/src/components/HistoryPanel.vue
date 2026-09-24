@@ -26,6 +26,19 @@
       <button class="refresh-btn" title="刷新列表" @click="refresh()">↻</button>
     </div>
 
+    <!-- 类型筛选：按钮式（不是下拉）。筛选在后端做，因为列表是分页的 -->
+    <div class="filter-row">
+      <button
+        v-for="f in STATUS_FILTERS"
+        :key="f.value"
+        class="filter-btn"
+        :class="{ on: statusFilter === f.value }"
+        @click="setStatusFilter(f.value)"
+      >
+        {{ f.label }}
+      </button>
+    </div>
+
     <!-- 卡片列表 -->
     <div class="scroll-area">
       <div class="card-list">
@@ -50,8 +63,7 @@
               </span>
             </div>
             <div class="card-row2">
-              {{ task.insurance_company || "未填写保险公司" }} ·
-              {{ taskTypeLabel(task.business_type) }}
+              {{ task.insurance_company || "未填写保险公司" }}
             </div>
             <div class="card-row3">
               <span class="time" :title="`创建：${fmtDateTime(task.created_at)}`">{{
@@ -61,7 +73,9 @@
             </div>
           </div>
         </div>
-        <div v-if="!filteredTasks.length" class="empty-hint">暂无保单</div>
+        <div v-if="!filteredTasks.length" class="empty-hint">
+          {{ statusFilter ? "该类型下暂无保单" : "暂无保单" }}
+        </div>
       </div>
     </div>
 
@@ -92,14 +106,13 @@ import { listChatTasks, listMyChatTasks } from "../api";
 import {
   fmtDateTime,
   statusInfo,
-  taskTypeLabel,
 } from "../constants";
 import { store } from "../store";
 
 const emit = defineEmits(["item-click"]);
 
 const PAGE_SIZE = 10;
-const POLL_INTERVAL = 15000; // 15s 轮询
+const POLL_INTERVAL = 5000; // 10s 轮询 /api/chat/tasks/mine
 const LAST_SEEN_KEY = "task_lastseen";
 
 const tasks = ref([]);
@@ -107,6 +120,14 @@ const selectedTaskId = ref("");
 const currentPage = ref(0);
 const totalCount = ref(0);
 const searchKeyword = ref("");
+/** 类型筛选："全部" / "进行中" / "已递交"
+ *  取值要和后端的分组对上（backend/cit_api/dao/message_dao.py 的 STATUS_GROUP_*） */
+const STATUS_FILTERS = [
+  { value: "", label: "全部" },
+  { value: "in_progress", label: "进行中" },
+  { value: "submitted", label: "已递交" },
+];
+const statusFilter = ref("");
 let pollTimer = null;
 
 /** 已读记录：{ task_id: ISO 时间 } */
@@ -204,8 +225,14 @@ async function loadHistory() {
   const skip = currentPage.value * PAGE_SIZE;
   try {
     if (store.user) {
-      tasks.value = await listMyChatTasks(store.user.id, skip, PAGE_SIZE);
+      tasks.value = await listMyChatTasks(
+        store.user.id,
+        skip,
+        PAGE_SIZE,
+        statusFilter.value
+      );
     } else {
+      // 兜底列表接口不支持分组，此时类型筛选不生效
       tasks.value = await listChatTasks(skip, PAGE_SIZE);
     }
   } catch (e) {
@@ -217,6 +244,15 @@ async function loadHistory() {
     tasks.value.length < PAGE_SIZE
       ? skip + tasks.value.length
       : skip + tasks.value.length + 1;
+}
+
+/** 切换类型筛选：回到第 1 页再拉
+ *  筛选在后端做，第 1 页是必须的 —— 否则原来的页码可能落在新结果集之外，看着像"没数据" */
+function setStatusFilter(value) {
+  if (statusFilter.value === value) return;
+  statusFilter.value = value;
+  currentPage.value = 0;
+  loadHistory();
 }
 
 function onPrevPage() {
@@ -348,6 +384,33 @@ defineExpose({ refresh, resetAndRefresh, markSeen });
 .refresh-btn:active {
   background: #91caff;
   color: var(--primary-active);
+}
+
+/* ── 类型筛选（按钮式） ── */
+.filter-row {
+  display: flex;
+  gap: 6px;
+  padding: 0 8px 6px 8px;
+}
+.filter-btn {
+  flex: 1;
+  height: 24px;
+  border: 1px solid #d9d9d9;
+  border-radius: 6px;
+  background: #fff;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1;
+}
+.filter-btn:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+.filter-btn.on {
+  background: var(--primary-light);
+  border-color: var(--primary);
+  color: var(--primary);
+  font-weight: 600;
 }
 
 /* ── 卡片列表 ── */

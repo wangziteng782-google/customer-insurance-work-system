@@ -12,7 +12,7 @@
         <span class="meta">{{ taskMsgCount }} 条消息</span>
       </template>
       <template v-else-if="insuranceCompany">
-        <span class="task-company">{{ insuranceCompany }} · {{ taskTypeLabel(policyType) }}</span>
+        <span class="task-company">{{ insuranceCompany }}</span>
         <span class="meta">新保单收集中</span>
       </template>
       <span v-else class="task-company muted">当前任务：未选择</span>
@@ -224,7 +224,6 @@ import {
   isImagePath,
   MAX_UPLOAD_LABEL,
   statusInfo,
-  taskTypeLabel,
   truncateMiddle,
   UPLOAD_ACCEPT,
   validateUploadFile,
@@ -237,7 +236,6 @@ const emit = defineEmits(["task-created", "task-changed"]);
 const pendingFiles = ref([]);
 const currentTaskId = ref("");
 const insuranceCompany = ref("");
-const policyType = ref(1);
 const customerCompany = ref("");
 const taskStatus = ref(1);
 const taskMsgCount = ref(0);
@@ -335,10 +333,9 @@ function genTaskId() {
 }
 
 // ── 新建保单收集 ──
-function onNewPolicyConfirm({ company, type }) {
+function onNewPolicyConfirm({ company }) {
   showNewPolicy.value = false;
   insuranceCompany.value = company;
-  policyType.value = type;
   customerCompany.value = ""; // 由第一条消息提取（见 onSend）
   currentTaskId.value = "";
   taskStatus.value = 1;
@@ -357,7 +354,6 @@ function setCurrentTask(task) {
   }
   currentTaskId.value = task.task_id || "";
   insuranceCompany.value = task.insurance_company || "";
-  policyType.value = task.business_type || 1;
   customerCompany.value = task.customer_company || "";
   taskStatus.value = task.status ?? 1;
   taskMsgCount.value = task.msg_count || 0;
@@ -820,7 +816,6 @@ async function onSend() {
         creator: store.user?.display_name ?? null,
         user_id: store.user?.id ?? null,
         insurance_company: insuranceCompany.value,
-        business_type: policyType.value,
         customer_company: customerCompany.value,
       });
       savedAny = true;

@@ -49,9 +49,16 @@ def list_companies(db: Session = Depends(get_db)):
 
 
 @router.get("/tasks/mine")
-def list_my_tasks(user_id: int, skip: int = 0, limit: int = 50, db: Session = Depends(get_db)):
-    """PySide 专用：获取当前用户自己的任务列表"""
-    return ChatMessageService(db).list_tasks_by_user(user_id, skip, limit)
+def list_my_tasks(user_id: int, skip: int = 0, limit: int = 50,
+                  status_group: str = None, db: Session = Depends(get_db)):
+    """桌面端专用：获取当前用户自己的任务列表
+
+    status_group：in_progress=只留尚未递交的 / submitted=只留已递交之后的 / 不传=全部
+    （取值非法时按"全部"处理，不让前端拼错一个参数就拿到空列表）
+    """
+    if status_group not in ("in_progress", "submitted"):
+        status_group = None
+    return ChatMessageService(db).list_tasks_by_user(user_id, skip, limit, status_group)
 
 
 @router.get("/tasks", response_model=list[ChatTaskOutDTO])

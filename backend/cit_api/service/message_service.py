@@ -133,9 +133,13 @@ class ChatMessageService:
             result.append(dto)
         return result
 
-    def list_tasks_by_user(self, user_id: int, skip: int = 0, limit: int = 50) -> list[ChatTaskOutDTO]:
-        """按用户获取任务列表（PySide 专用）"""
-        tasks = self.dao.list_tasks_by_user(self.db, user_id, skip, limit)
+    def list_tasks_by_user(self, user_id: int, skip: int = 0, limit: int = 50,
+                           status_group: str | None = None) -> list[ChatTaskOutDTO]:
+        """按用户获取任务列表（桌面端专用）
+
+        status_group: None=全部 / "in_progress"=尚未递交 / "submitted"=已递交之后
+        """
+        tasks = self.dao.list_tasks_by_user(self.db, user_id, skip, limit, status_group)
         task_ids = [t['task_id'] for t in tasks]
         msg_map = self.dao.list_messages_batch(self.db, task_ids)
         comment_map = self.dao.list_comments_batch(self.db, task_ids)

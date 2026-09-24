@@ -221,21 +221,40 @@ class ChatMessageDAO:
             for t in tasks
         ]
 
+    # 桌面端左侧「类型筛选」的两个分组（状态码见 model.InsuranceTask.status）
+    # 放在后端过滤而不是前端：列表是后端分页的（每页 10 条），前端过滤只会过滤当前这一页，
+    # 页码和"还有没有下一页"都会对不上。
+    STATUS_GROUP_IN_PROGRESS = (1, 2, 3, 7, 9, 10)  # 尚未递交：进行中/待确认/已做单/待补充/待递交/进行中(修改)
+    STATUS_GROUP_SUBMITTED = (4, 5, 6)              # 已递交之后：已递交/对公认款中/二维码
+
     @staticmethod
-    def list_tasks_by_user(db: Session, user_id: int, skip: int = 0, limit: int = 50) -> list[dict]:
-        """按用户获取任务列表（桌面端专用），隐藏非今天的已递交(4)/对公认款中(5）"""
+    def list_tasks_by_user(db: Session, user_id: int, skip: int = 0, limit: int = 50,
+                           status_group: str | None = None) -> list[dict]:
+        """按用户获取任务列表（桌面端专用）
+
+        status_group：
+          None            → 全部，保留原有隐藏规则（隐藏非今天的已递交(4)/对公认款中(5)）
+          "in_progress"   → 只留尚未递交的
+          "submitted"     → 只留已递交之后的，并**跳过隐藏规则**：已递交的单基本都不是今天创建的，
+                            隐藏掉的话这个筛选永远是空的（实测全库 13 条已递交，无一今天创建）
+        """
         _HIDE_STATUS = (4, 5)
         _today = date.today().isoformat()
         _q = db.query(InsuranceTask).filter(InsuranceTask.user_id == user_id)
-        # 隐藏条件：状态 in (4,5) 且 created_at 存在且不是今天
-        # created_at 为 NULL 的任务不隐藏（兜底保留）
-        _q = _q.filter(
-            ~(
-                InsuranceTask.status.in_(_HIDE_STATUS)
-                & (InsuranceTask.created_at != None)
-                & (func.date(InsuranceTask.created_at) != _today)
+        if status_group == "in_progress":
+            _q = _q.filter(InsuranceTask.status.in_(ChatMessageDAO.STATUS_GROUP_IN_PROGRESS))
+        elif status_group == "submitted":
+            _q = _q.filter(InsuranceTask.status.in_(ChatMessageDAO.STATUS_GROUP_SUBMITTED))
+        else:
+            # 隐藏条件：状态 in (4,5) 且 created_at 存在且不是今天
+            # created_at 为 NULL 的任务不隐藏（兜底保留）
+            _q = _q.filter(
+                ~(
+                    InsuranceTask.status.in_(_HIDE_STATUS)
+                    & (InsuranceTask.created_at != None)
+                    & (func.date(InsuranceTask.created_at) != _today)
+                )
             )
-        )
         tasks = (
             ChatMessageDAO._order_by_last_message(db, _q)
             .offset(skip)

@@ -149,7 +149,7 @@ function normalizeTask(t, comments, images, messages) {
     time: fmtTs(t.created_at),          // head-row2 展示：任务创建时间
     lastMsgAt: fmtTs(lastMsgAt),        // 最新消息时间（= 通常意义上的"更新时间"）
     updated_at: t.updated_at || t.created_at || "",
-    type: TYPE_LABELS[t.business_type] || "新投",
+    type: TYPE_LABELS[t.business_type] || "",  // desktop 已不再选择类型，新任务为空
     status: t.status,
     rejectReason: rejectReason,
     images: images,
@@ -236,10 +236,6 @@ function companyHasUnread(company) {
   }
   // 兼容没有 task_times 的接口：退回已加载的全量任务数据
   return allAllTasks.some(t => (t._insuranceCompany || t.insurance_company) === company && isUnread(t));
-}
-
-function hasNewImages(task) {
-  return isUnread(task) && (task.messages || []).some(m => (m.file_paths || []).length > 0);
 }
 
 // ── 置顶保险公司（localStorage 保存顺序，数组下标即显示位置）──
@@ -349,7 +345,8 @@ function render() {
   const kw = ((document.getElementById("keywordInput") || {}).value || "").trim().toLowerCase();
   const baseTasks = selected.length ? d.tasks.filter(t => selected.includes(t.user)) : d.tasks;
   let tasks = statusChecks.length ? baseTasks.filter(t => statusChecks.includes(t.status)) : baseTasks;
-  if (typeVal) tasks = tasks.filter(t => (t.type || "新投") === typeVal);
+  // 做单类型精确匹配：无类型的新任务只在「全部」里出现
+  if (typeVal) tasks = tasks.filter(t => t.type === typeVal);
   // 标签筛选：任务带任一选中标签即显示（OR）。
   // ponytail: 用内存里的 tagBindings 过滤，任务超 limit=1000 会漏——与现有全部筛选同天花板
   if (tagFilterIds.length)
@@ -388,7 +385,7 @@ function render() {
           <div class="head-info">
             <div class="head-row1">
               <span class="name">${t.company || t.user}</span>
-              <span class="type-tag ${t.type === '批改' ? 'type-end' : 'type-new'}">${t.type || '新投'}</span>
+              ${t.type ? `<span class="type-tag ${t.type === '批改' ? 'type-end' : 'type-new'}">${t.type}</span>` : ""}
             </div>
             <div class="head-row2" title="创建：${t.time}${t.lastMsgAt ? `｜最新消息：${t.lastMsgAt}` : ""}">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
@@ -1177,7 +1174,8 @@ async function openModal(i) {
   const task = renderedTasks[i];
   if (!task) return;
   currentModalTask = task;
-  document.getElementById("modalSub").textContent = (task.company || task.user) + " · " + (task.type || "新投");
+  document.getElementById("modalSub").textContent =
+    (task.company || task.user) + (task.type ? " · " + task.type : "");
   const fileList = document.getElementById("fileList");
   fileList.innerHTML = `<div style="text-align:center;padding:24px;color:var(--gray-400);font-size:var(--fs-sm)">加载中...</div>`;
   document.getElementById("modalMask").classList.add("show");
@@ -1316,6 +1314,15 @@ function ocrGetCached(taskId) {
   return ocrCacheAll()[taskId] || "";
 }
 
+// 识别进度标记：值 = 识别完成时任务内最新图片的 created_at。
+// 缩略图红点 = 未识别（created_at > done），与消息红点(seen_)是两个维度
+const OCR_DONE_KEY = "ocr_done_";
+
+function ocrIsPending(item) {
+  const done = localStorage.getItem(OCR_DONE_KEY + ocrTaskId);
+  return !done || item.created_at > done;
+}
+
 // 把识别结果写入文本框（用 .value 赋值，避免内容含特殊字符破坏 HTML）
 function ocrSetResultText(text) {
   document.getElementById("ocrResultArea").innerHTML =
@@ -1338,12 +1345,7 @@ function runCardOCR(i) {
   if (!t) return;
   ocrTaskIdx = i;
   ocrTaskId = t.id;
-  // 收集任务中的所有图片 URL
-  const imgUrls = (t.messages || []).flatMap(m => m.file_paths || [])
-    .filter(url => IMAGE_EXTS.includes('.' + url.split('.').pop().toLowerCase()));
   document.getElementById("ocrSub").textContent = (t.company || t.user) + " · " + (t.type || "新投");
-  const newImgMarker = hasNewImages(t) ? "新" : "";
-  document.getElementById("ocrImgCount").textContent = imgUrls.length + " 张" + (newImgMarker ? " · " + newImgMarker + "图片" : "");
   const imgWithTime = [];
   (t.messages || []).forEach(m => {
     (m.file_paths || []).forEach(url => {
@@ -1353,6 +1355,9 @@ function runCardOCR(i) {
     });
   });
   ocrImages = imgWithTime;
+  // 标题"新图片" = 有未识别的图片，与缩略图红点同口径
+  const newImgMarker = ocrImages.some(ocrIsPending) ? "新" : "";
+  document.getElementById("ocrImgCount").textContent = ocrImages.length + " 张" + (newImgMarker ? " · " + newImgMarker + "图片" : "");
   ocrSelected = new Set();
   renderOcrThumbs();
   ocrFiles = {}; // 清掉上一个任务的预取结果；勾选后才按需预取（见 ocrPrefetchSelected）
@@ -1363,7 +1368,6 @@ function runCardOCR(i) {
     ocrSetResultText(cached);
     document.getElementById("ocrVerifyBtn").style.display = "inline-flex";
     document.getElementById("ocrCopyBtn").style.display = "inline-flex";
-    document.getElementById("ocrActionBtn").textContent = "重新识别";
   } else {
     document.getElementById("ocrResultArea").innerHTML = `
     <div class="ocr-loading">
@@ -1372,7 +1376,6 @@ function runCardOCR(i) {
     </div>`;
     document.getElementById("ocrVerifyBtn").style.display = "none";
     document.getElementById("ocrCopyBtn").style.display = "none";
-    document.getElementById("ocrActionBtn").textContent = "开始识别";
   }
   document.getElementById("ocrActionBtn").onclick = ocrStart;
   document.getElementById("ocrMask").classList.add("show");
@@ -1439,9 +1442,8 @@ function renderOcrThumbs() {
     updateOcrSelBar();
     return;
   }
-  const seen = localStorage.getItem("seen_" + ocrTaskId);
   list.innerHTML = ocrImages.map((item, k) => {
-    const isNew = !seen || item.created_at > seen;
+    const isNew = ocrIsPending(item);
     const imgNew = isNew ? '<span class="unread-dot ocr"></span>' : '';
     const sel = ocrSelected.has(k) ? " sel" : "";
     return `<div class="ocr-thumb${sel}" id="ocrThumb-${k}" draggable="true"
@@ -1561,23 +1563,36 @@ async function ocrDownloadOne(url, name) {
 }
 
 function ocrStart() {
-  const t = renderedTasks[ocrTaskIdx];
-  if (!t) return;
-  const imgUrls = (t.messages || []).flatMap(m => m.file_paths || [])
-    .filter(url => IMAGE_EXTS.includes('.' + url.split('.').pop().toLowerCase()));
-  if (!imgUrls.length) {
+  if (!ocrImages.length) {
     toast("该任务暂无图片");
     return;
   }
+  // 识别目标：勾选了就只识别勾选的；没勾选则识别带红点的（没有红点 = 全部）。
+  // 部分识别 → 结果追加到已有文本；识别全部 → 覆盖重来
+  const selIdx = [...ocrSelected].sort((a, b) => a - b);
+  const pendingIdx = ocrImages.map((_, i) => i).filter(i => ocrIsPending(ocrImages[i]));
+  const idxs = selIdx.length ? selIdx
+    : (pendingIdx.length ? pendingIdx : ocrImages.map((_, i) => i));
+  const append = idxs.length < ocrImages.length;
+  const targets = idxs.map(i => ({ url: ocrImages[i].url, no: i + 1, at: ocrImages[i].created_at }));
   const btn = document.getElementById("ocrActionBtn");
   btn.disabled = true;
   btn.textContent = "识别中...";
-  document.getElementById("ocrResultArea").innerHTML = `
-    <div class="ocr-loading"><span class="spinner"></span>正在识别 ${imgUrls.length} 张身份证，请稍候...</div>`;
+  // 已有识别结果时文本框原地保留，上方插入紧凑进度条（识别期间锁定防误编辑），
+  // 只有首次识别（还没有文本框）才用大加载条替换占位提示
+  const ta = document.getElementById("ocrSummary");
+  if (ta) {
+    ta.readOnly = true;
+    document.getElementById("ocrResultArea").insertAdjacentHTML("afterbegin",
+      `<div class="ocr-loading ocr-running" id="ocrRunning"><span class="spinner"></span>正在识别 ${targets.length} 张身份证，请稍候...</div>`);
+  } else {
+    document.getElementById("ocrResultArea").innerHTML = `
+      <div class="ocr-loading"><span class="spinner"></span>正在识别 ${targets.length} 张身份证，请稍候...</div>`;
+  }
   authFetch('/api/ocr/recognize', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ image_urls: imgUrls }),
+    body: JSON.stringify({ image_urls: targets.map(x => x.url) }),
   })
     .then(r => {
       if (!r.ok) return r.json().then(e => { throw new Error(e.detail || '识别失败'); });
@@ -1587,18 +1602,30 @@ function ocrStart() {
       ocrResults = data.results || [];
       ocrErrors = data.errors || [];
       btn.disabled = false;
-      btn.textContent = "重新识别";
+      btn.textContent = "开始识别";
       btn.onclick = ocrStart;
       document.getElementById("ocrVerifyBtn").style.display = "inline-flex";
       document.getElementById("ocrCopyBtn").style.display = "inline-flex";
-      ocrFillResult();
-      toast("OCR 识别完成");
+      // 记录识别进度：只推进到「本次已识别图片」的最新时间，且只增不减——
+      // 勾选识别部分新图时，没识别的那几张红点保留；勾旧图重识别也不会把进度倒回去
+      const oldDone = localStorage.getItem(OCR_DONE_KEY + ocrTaskId) || "";
+      const maxAt = targets.reduce((m, x) => (x.at > m ? x.at : m), oldDone);
+      localStorage.setItem(OCR_DONE_KEY + ocrTaskId, maxAt);
+      renderOcrThumbs();
+      ocrFillResult(targets, append);
+      toast(append ? `已识别 ${targets.length} 张，结果已追加` : "OCR 识别完成");
     })
     .catch(e => {
       btn.disabled = false;
       btn.textContent = "开始识别";
-      document.getElementById("ocrResultArea").innerHTML = `
-        <div class="ocr-loading" style="color:#f5222d">识别失败：${e.message}</div>`;
+      // 有文本框时移除进度条、保留内容和可编辑状态，错误只走 toast；没有文本框才显示错误占位
+      if (ta) {
+        document.getElementById("ocrRunning")?.remove();
+        ta.readOnly = false;
+      } else {
+        document.getElementById("ocrResultArea").innerHTML = `
+          <div class="ocr-loading" style="color:#f5222d">识别失败：${e.message}</div>`;
+      }
       toast("识别失败：" + e.message);
     });
 }
@@ -1606,12 +1633,15 @@ function ocrStart() {
 let ocrResults = [];
 let ocrErrors = [];
 
-function ocrFillResult() {
+function ocrFillResult(targets, append) {
+  // 追加模式：旧文本从缓存取（每次输入都会实时写入缓存，是恒定数据源），
+  // 不从 DOM 读——识别期间文本框可能被锁定/重建
+  const prev = append ? (ocrGetCached(ocrTaskId) || "").trim() : "";
   const lines = ocrResults.map((r, i) => {
-    if (!r) return `（第 ${i + 1} 张识别失败）`;
+    if (!r) return `（图片 ${targets[i].no} 识别失败）`;
     return r.name ? `${r.name} ${r.id_number}` : r.id_number;
   });
-  ocrSetResultText(lines.join("\n"));
+  ocrSetResultText([prev, ...lines].filter(Boolean).join("\n"));
   ocrSaveText(); // 识别结果立即写入缓存，关闭弹窗后仍可回显
   document.getElementById("ocrVerifyTip").style.display = "none";
 }

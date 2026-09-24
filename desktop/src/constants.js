@@ -27,11 +27,6 @@ export function statusInfo(status) {
   return STATUS_MAP[status] || UNKNOWN_STATUS;
 }
 
-/** 保单类型：1新投 / 2批改 */
-export function taskTypeLabel(businessType) {
-  return businessType === 2 ? "批改" : "新投";
-}
-
 /**
  * 从消息文本里提取客户公司名
  *

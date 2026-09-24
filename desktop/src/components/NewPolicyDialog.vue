@@ -30,16 +30,6 @@
         </div>
       </div>
 
-      <label class="field-label">保单类型 <span style="color: red">*</span></label>
-      <div class="type-row">
-        <label class="radio">
-          <input v-model="policyType" type="radio" :value="1" />新投
-        </label>
-        <label class="radio">
-          <input v-model="policyType" type="radio" :value="2" />批改
-        </label>
-      </div>
-
       <p class="error" :class="{ visible: !!error }">{{ error }}</p>
 
       <div class="btn-row">
@@ -57,7 +47,6 @@ import { listDropdowns } from "../api";
 const emit = defineEmits(["close", "confirm"]);
 
 const company = ref("");
-const policyType = ref(1);
 const error = ref("");
 const companyOpen = ref(false);
 const companyInput = ref(null);
@@ -101,7 +90,6 @@ function onConfirm() {
   // 客户公司名不再在这里填：第一条消息以「公司：xxx」开头，发送时从消息里提取
   emit("confirm", {
     company: company.value,
-    type: policyType.value,
   });
 }
 
@@ -200,31 +188,6 @@ input:not([type="radio"]):focus {
   color: var(--primary);
 }
 
-.type-row {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 20px;
-  margin-bottom: 12px;
-}
-.radio {
-  display: inline-flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  color: #3a3a4a;
-  cursor: pointer;
-  white-space: nowrap;
-}
-.radio input[type="radio"] {
-  width: 14px;
-  height: 14px;
-  margin: 0;
-  padding: 0;
-  accent-color: var(--primary);
-  cursor: pointer;
-}
 .error {
   min-height: 18px;
   font-size: 12px;

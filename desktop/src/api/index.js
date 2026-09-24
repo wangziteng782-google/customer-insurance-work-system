@@ -107,10 +107,15 @@ export async function listChatTasks(skip = 0, limit = 50) {
   return resp.json();
 }
 
-/** 获取当前用户自己的任务列表 */
-export async function listMyChatTasks(userId, skip = 0, limit = 50) {
+/** 获取当前用户自己的任务列表
+ *
+ * statusGroup："" = 全部 / "in_progress" = 尚未递交 / "submitted" = 已递交之后
+ * 分组过滤放在后端做：列表是分页的（每页 10 条），前端过滤只能过滤当前这一页。
+ */
+export async function listMyChatTasks(userId, skip = 0, limit = 50, statusGroup = "") {
+  const group = statusGroup ? `&status_group=${statusGroup}` : "";
   const resp = await fetchTimeout(
-    `${BASE_URL}/api/chat/tasks/mine?user_id=${userId}&skip=${skip}&limit=${limit}`,
+    `${BASE_URL}/api/chat/tasks/mine?user_id=${userId}&skip=${skip}&limit=${limit}${group}`,
     { headers: authHeaders() },
     3000
   );
