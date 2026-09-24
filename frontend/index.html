@@ -5,7 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>易梯保险系统</title>
 <link rel="icon" href="images/logo.png" type="image/png">
-<link rel="stylesheet" href="css/style.css?v=4">
+<link rel="stylesheet" href="css/style.css?v=8">
+<!-- 图片对照识别结果的样式单独一个文件（style.css 被整块回退过几次，分开不易被带走）；
+     必须在 style.css 之后引入：里面既有新增规则，也要覆盖 style.css 的旧规则 -->
+<link rel="stylesheet" href="css/ocr-preview.css?v=7">
 <script>
   if (!localStorage.getItem('token')) location.href = 'login.html';
 </script>
@@ -404,19 +407,36 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
           复制结果
         </button>
-        <button class="btn primary" id="ocrActionBtn" onclick="ocrStart()">开始识别</button>
+        <button class="btn primary" id="ocrActionBtn" onclick="ocrStart()">身份证识别</button>
+        <button class="btn" id="ocrRawBtn" onclick="ocrStartRaw()">图片识别</button>
         <button class="btn" onclick="closeOcrModal()">关闭</button>
       </div>
     </div>
   </div>
 </div>
 
-<!-- 图片放大预览层 -->
+<!-- 图片放大预览层：默认是"单图大图"；OCR 弹窗里双击缩略图会进「左图右结果」对照模式 -->
 <div class="img-viewer" id="imgViewer">
   <button class="img-viewer-rotate" title="旋转 90°" onclick="viewerRotate()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><polyline points="21 3 21 9 15 9"/></svg></button>
   <a class="img-viewer-dl" id="imgViewerDl" download>下载</a>
   <button class="img-viewer-close" onclick="closeImgViewer()">×</button>
-  <img id="imgViewerSrc" src="" alt="预览">
+
+  <!-- 上一张 / 下一张（只在对照模式下显示，逻辑见 js/ocr-preview.js） -->
+  <button class="iv-nav prev" id="ivPrev" title="上一张（←）">‹</button>
+  <button class="iv-nav next" id="ivNext" title="下一张（→）">›</button>
+
+  <div class="iv-stage">
+    <img id="imgViewerSrc" src="" alt="预览">
+    <!-- 底部缩略图条：点哪张跳哪张 -->
+    <div class="iv-thumbs" id="ivThumbs"></div>
+  </div>
+
+  <!-- 右侧：识别结果逐行列出，当前图片对应的那一行高亮 -->
+  <aside class="iv-side">
+    <div class="iv-side-head">识别结果</div>
+    <div class="iv-side-body" id="ivSideBody"></div>
+  </aside>
+
   <span class="img-viewer-tag" id="imgViewerTag"></span>
 </div>
 
@@ -436,7 +456,9 @@
 
 <div class="toast" id="toast"></div>
 
-<script src="js/app.js?v=5"></script>
+<script src="js/app.js?v=12"></script>
+<!-- 图片对照识别结果：必须在 app.js 之后（要读它的全局变量与工具函数） -->
+<script src="js/ocr-preview.js?v=5"></script>
 <script>
   // 填充登录用户信息
   var u = JSON.parse(localStorage.getItem('currentUser') || '{}');

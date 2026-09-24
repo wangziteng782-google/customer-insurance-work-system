@@ -301,6 +301,52 @@ h1{font-size:var(--fs-lg);margin:0;padding-left:8px;border-left:3px solid var(--
 .img-viewer-rotate svg{width:20px;height:20px}
 .img-viewer-tag{position:absolute;bottom:24px;left:50%;transform:translateX(-50%);color:#fff;font-size:var(--fs-sm);background:rgba(0,0,0,.5);padding:6px 16px;border-radius:14px}
 
+/* ── 图片 + 识别结果 对照预览（js/ocr-preview.js） ──
+   默认仍是"单图大图"那套；预览层加上 .iv-ocr 才变成「左图右结果」 */
+.img-viewer.iv-ocr{flex-direction:row;align-items:stretch;justify-content:flex-start;padding:0;gap:0;cursor:default}
+.iv-stage{position:relative;flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:64px 16px 16px;overflow:auto}
+.img-viewer.iv-ocr .img-viewer-tag{bottom:auto;top:16px;left:16px;transform:none}
+/* 右侧结果栏 */
+.iv-side{width:380px;flex:none;min-width:0;background:#fff;display:flex;flex-direction:column;border-left:1px solid var(--gray-200)}
+.iv-side-head{flex:none;padding:10px 56px 10px 14px;border-bottom:1px solid var(--gray-200);background:#fafafa;font-size:var(--fs-sm);font-weight:600;color:var(--gray-800)}
+.iv-note{flex:none;padding:8px 14px;background:#fffbe6;border-bottom:1px solid #ffe58f;color:#ad6800;font-size:var(--fs-xs);line-height:1.6}
+.iv-side-body{flex:1;min-height:0;overflow:auto;padding:8px}
+.iv-empty{padding:28px 12px;text-align:center;color:var(--gray-500);font-size:var(--fs-sm);line-height:2}
+.iv-empty span{font-size:var(--fs-xs);color:var(--gray-400)}
+/* 一行 = 一张图的结果；.on 就是"当前这张图"那一行 */
+.iv-line{display:flex;gap:8px;align-items:flex-start;padding:7px 8px;border-radius:6px;border-left:3px solid transparent;cursor:pointer;font-size:var(--fs-sm);line-height:1.55}
+.iv-line:hover{background:var(--gray-50)}
+.iv-line.on{background:var(--blue-50);border-left-color:var(--blue);font-weight:600}
+.iv-line.fail .iv-text{color:#cf1322}
+.iv-line.extra{opacity:.5}
+.iv-line.placeholder{cursor:default;font-weight:400}
+.iv-no{flex:none;min-width:34px;padding-top:2px;color:var(--gray-500);font-size:var(--fs-xs)}
+.iv-line.on .iv-no{color:var(--blue)}
+.iv-text{flex:1;min-width:0;word-break:break-all}
+/* 上一张 / 下一张（只在对照模式显示） */
+.iv-nav{position:absolute;top:50%;transform:translateY(-50%);width:44px;height:64px;border:0;border-radius:8px;background:rgba(255,255,255,.15);color:#fff;font-size:30px;line-height:1;cursor:pointer;display:none;place-items:center}
+.iv-nav:hover:not(:disabled){background:rgba(255,255,255,.32)}
+.iv-nav:disabled{opacity:.25;cursor:not-allowed}
+.iv-nav.prev{left:14px}
+.iv-nav.next{right:calc(380px + 14px)}
+.img-viewer.iv-ocr .iv-nav{display:grid}
+/* 顶部三个按钮给右侧结果栏让位 */
+/* 关闭按钮放到「识别结果」栏的右边（贴窗口右上角）；旋转 / 下载留在图片区右上角 */
+.img-viewer.iv-ocr .img-viewer-close{right:24px}
+.img-viewer.iv-ocr .img-viewer-rotate{right:calc(380px + 76px)}
+.img-viewer.iv-ocr .img-viewer-dl{right:calc(380px + 128px)}
+/* 底部缩略图条：点哪张跳哪张 */
+.iv-thumbs{position:absolute;left:0;right:0;bottom:8px;display:none;gap:6px;padding:6px 10px;overflow-x:auto;overflow-y:hidden}
+.iv-thumb{flex:none;width:54px;height:54px;padding:0;border:2px solid transparent;border-radius:6px;background:transparent;cursor:pointer;overflow:hidden}
+.iv-thumb img{width:100%;height:100%;max-width:none;max-height:none;object-fit:cover;border-radius:4px;box-shadow:none;transition:none}
+.iv-thumb.on{border-color:var(--blue)}
+/* 这两块的滚动条加粗加深：Win11 默认那条只有两三个像素，鼠标很难抓 */
+:is(.iv-side-body,.iv-thumbs){scrollbar-width:auto;scrollbar-color:#a9b1bb #eef0f3}
+:is(.iv-side-body,.iv-thumbs)::-webkit-scrollbar{width:14px;height:14px}
+:is(.iv-side-body,.iv-thumbs)::-webkit-scrollbar-track{background:#eef0f3}
+:is(.iv-side-body,.iv-thumbs)::-webkit-scrollbar-thumb{background:#a9b1bb;border:2px solid #eef0f3;border-radius:8px}
+:is(.iv-side-body,.iv-thumbs)::-webkit-scrollbar-thumb:hover{background:#7d8794}
+
 .modal-mask{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;padding:24px;z-index:99}
 .modal-mask.show{display:flex}
 .modal{width:min(880px,94vw);max-height:90vh;background:#fff;border-radius:var(--r-md);box-shadow:var(--shadow-lg);display:flex;flex-direction:column;overflow:hidden}

@@ -1302,16 +1302,10 @@ let ocrFiles = {};           // 预取的图片二进制 File（下标 → File�
 // OCR 识别结果按任务持久化：关闭弹窗、刷新页面都保留，只有「重新识别」才覆盖
 const OCR_CACHE_KEY = "ocr_text_cache";
 
-function ocrCacheAll() {
-  try {
-    return JSON.parse(localStorage.getItem(OCR_CACHE_KEY) || "{}");
-  } catch {
-    return {};
-  }
-}
-
+// 识别结果的读写（含"结果第几行 ↔ 第几张图"的映射）都在 js/ocr-preview.js，那边是唯一数据源；
+// 这里只留薄封装给原有调用点
 function ocrGetCached(taskId) {
-  return ocrCacheAll()[taskId] || "";
+  return ocrvCacheText(taskId);
 }
 
 // 识别进度标记：值 = 识别完成时任务内最新图片的 created_at。
@@ -1330,14 +1324,12 @@ function ocrSetResultText(text) {
   document.getElementById("ocrSummary").value = text || "";
 }
 
-// 手动编辑后同步到缓存
+// 手动编辑后同步到缓存；文本真被改了才丢弃"行 ↔ 图"映射（见 js/ocr-preview.js）
 function ocrSaveText() {
   if (!ocrTaskId) return;
   const ta = document.getElementById("ocrSummary");
   if (!ta) return;
-  const all = ocrCacheAll();
-  all[ocrTaskId] = ta.value;
-  localStorage.setItem(OCR_CACHE_KEY, JSON.stringify(all));
+  ocrvCacheSaveEdited(ocrTaskId, ta.value);
 }
 
 function runCardOCR(i) {
@@ -1372,7 +1364,7 @@ function runCardOCR(i) {
     document.getElementById("ocrResultArea").innerHTML = `
     <div class="ocr-loading">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="32" height="32" style="color:var(--gray-300)"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 8h3M7 12h5M7 16h4M15 8v8M18 8v8"/></svg>
-      点击下方"开始识别"按钮进行 OCR 识别
+      点击下方「身份证识别」录入信息，或「图片识别」原样输出文字
     </div>`;
     document.getElementById("ocrVerifyBtn").style.display = "none";
     document.getElementById("ocrCopyBtn").style.display = "none";
@@ -1393,6 +1385,8 @@ let viewerRot = 0, viewerScale = 1;
 function viewerApply() {
   document.getElementById("imgViewerSrc").style.transform =
     `rotate(${viewerRot}deg) scale(${viewerScale})`;
+  // 旋转 90/270 时宽高预算要对调（否则图会被裁掉、看着像"旋转没反应"），交给 ocr-preview.js
+  if (typeof ocrvOnViewerTransform === "function") ocrvOnViewerTransform();
 }
 
 function openImgViewer(src, tag) {
@@ -1420,7 +1414,11 @@ document.getElementById("imgViewer").addEventListener("wheel", e => {
   viewerScale = Math.min(8, Math.max(1, viewerScale * (e.deltaY < 0 ? 1.2 : 1 / 1.2)));
   viewerApply();
 });
-function closeImgViewer() { document.getElementById("imgViewer").classList.remove("show"); }
+function closeImgViewer() {
+  document.getElementById("imgViewer").classList.remove("show");
+  // 对照模式（js/ocr-preview.js）要顺手解绑键盘、复位样式；那个文件没加载时函数不存在，所以判一下
+  if (typeof ocrvOnViewerClosed === "function") ocrvOnViewerClosed();
+}
 
 // ── 缩略图：勾选 / 全选 / 拖拽 / 批量下载 ──
 
@@ -1449,8 +1447,8 @@ function renderOcrThumbs() {
     return `<div class="ocr-thumb${sel}" id="ocrThumb-${k}" draggable="true"
         ondragstart="ocrDragStart(event, ${k})"
         onclick="ocrToggleSelect(${k})"
-        ondblclick="openImgViewer('${item.url}','图片 ${k+1}')"
-        title="单击勾选 · 双击查看大图 · 可直接拖拽">
+        ondblclick="openOcrViewer(${k})"
+        title="单击勾选 · 双击看大图并对照识别结果 · 可直接拖拽">
       <span class="ocr-check">✓</span>
       ${imgNew}<img src="${qiniuImg(item.url, THUMB_WIDTH)}" loading="lazy" decoding="async" alt="图片 ${k+1}" draggable="false" onerror="this.style.display='none'">
       <div class="ocr-thumb-label">图片 ${k+1}</div>
@@ -1567,28 +1565,12 @@ function ocrStart() {
     toast("该任务暂无图片");
     return;
   }
-  // 识别目标：勾选了就只识别勾选的；没勾选则识别带红点的（没有红点 = 全部）。
-  // 部分识别 → 结果追加到已有文本；识别全部 → 覆盖重来
-  const selIdx = [...ocrSelected].sort((a, b) => a - b);
-  const pendingIdx = ocrImages.map((_, i) => i).filter(i => ocrIsPending(ocrImages[i]));
-  const idxs = selIdx.length ? selIdx
-    : (pendingIdx.length ? pendingIdx : ocrImages.map((_, i) => i));
-  const append = idxs.length < ocrImages.length;
-  const targets = idxs.map(i => ({ url: ocrImages[i].url, no: i + 1, at: ocrImages[i].created_at }));
+  // 识别目标：勾选了就只识别勾选的；没勾选则识别带红点的（没有红点 = 全部）
+  const targets = ocrComputeTargets();
   const btn = document.getElementById("ocrActionBtn");
   btn.disabled = true;
   btn.textContent = "识别中...";
-  // 已有识别结果时文本框原地保留，上方插入紧凑进度条（识别期间锁定防误编辑），
-  // 只有首次识别（还没有文本框）才用大加载条替换占位提示
-  const ta = document.getElementById("ocrSummary");
-  if (ta) {
-    ta.readOnly = true;
-    document.getElementById("ocrResultArea").insertAdjacentHTML("afterbegin",
-      `<div class="ocr-loading ocr-running" id="ocrRunning"><span class="spinner"></span>正在识别 ${targets.length} 张身份证，请稍候...</div>`);
-  } else {
-    document.getElementById("ocrResultArea").innerHTML = `
-      <div class="ocr-loading"><span class="spinner"></span>正在识别 ${targets.length} 张身份证，请稍候...</div>`;
-  }
+  const ta = ocrShowRunning(`正在识别 ${targets.length} 张身份证，请稍候...`);
   authFetch('/api/ocr/recognize', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -1602,7 +1584,7 @@ function ocrStart() {
       ocrResults = data.results || [];
       ocrErrors = data.errors || [];
       btn.disabled = false;
-      btn.textContent = "开始识别";
+      btn.textContent = "身份证识别";
       btn.onclick = ocrStart;
       document.getElementById("ocrVerifyBtn").style.display = "inline-flex";
       document.getElementById("ocrCopyBtn").style.display = "inline-flex";
@@ -1612,17 +1594,16 @@ function ocrStart() {
       const maxAt = targets.reduce((m, x) => (x.at > m ? x.at : m), oldDone);
       localStorage.setItem(OCR_DONE_KEY + ocrTaskId, maxAt);
       renderOcrThumbs();
-      ocrFillResult(targets, append);
-      toast(append ? `已识别 ${targets.length} 张，结果已追加` : "OCR 识别完成");
+      ocrClearRunning(ta);
+      ocrFillResult(targets);
+      toast(`已识别 ${targets.length} 张，结果已追加到文本框`);
     })
     .catch(e => {
       btn.disabled = false;
-      btn.textContent = "开始识别";
-      // 有文本框时移除进度条、保留内容和可编辑状态，错误只走 toast；没有文本框才显示错误占位
-      if (ta) {
-        document.getElementById("ocrRunning")?.remove();
-        ta.readOnly = false;
-      } else {
+      btn.textContent = "身份证识别";
+      // 有文本框时撤掉进度条、保留内容和可编辑状态，错误只走 toast；没有文本框才显示错误占位
+      ocrClearRunning(ta);
+      if (!ta) {
         document.getElementById("ocrResultArea").innerHTML = `
           <div class="ocr-loading" style="color:#f5222d">识别失败：${e.message}</div>`;
       }
@@ -1630,19 +1611,123 @@ function ocrStart() {
     });
 }
 
+/**
+ * 识别中：锁定文本框 + 在结果区顶部插一条紧凑进度条；
+ * 还没有文本框（首次识别）就把占位提示整块换成大加载条。
+ * 返回值是当前的 textarea（可能为 null），结束时要交给 ocrClearRunning 收拾。
+ */
+function ocrShowRunning(message) {
+  const ta = document.getElementById("ocrSummary");
+  if (ta) {
+    ta.readOnly = true;
+    document.getElementById("ocrResultArea").insertAdjacentHTML("afterbegin",
+      `<div class="ocr-loading ocr-running" id="ocrRunning"><span class="spinner"></span>${message}</div>`);
+  } else {
+    document.getElementById("ocrResultArea").innerHTML = `
+      <div class="ocr-loading"><span class="spinner"></span>${message}</div>`;
+  }
+  return ta;
+}
+
+/** 识别结束（成功、失败都要调）：撤掉进度条、放开文本框 */
+function ocrClearRunning(ta) {
+  document.getElementById("ocrRunning")?.remove();
+  if (ta) ta.readOnly = false;
+}
+
+/**
+ * 识别目标。
+ *   onlySelected = true → 只认勾选的图片（「图片识别」用；没勾选就返回空，由调用方拦下）
+ *   其它（身份证识别）   → 勾选 → 只识别勾选的；没勾选 → 识别带红点（未识别）的；都没有 → 全部
+ */
+function ocrComputeTargets(onlySelected) {
+  const selIdx = [...ocrSelected].sort((a, b) => a - b);
+  if (onlySelected) {
+    return selIdx.map(i => ({ url: ocrImages[i].url, no: i + 1, at: ocrImages[i].created_at }));
+  }
+  const pendingIdx = ocrImages.map((_, i) => i).filter(i => ocrIsPending(ocrImages[i]));
+  const idxs = selIdx.length
+    ? selIdx
+    : (pendingIdx.length ? pendingIdx : ocrImages.map((_, i) => i));
+  return idxs.map(i => ({ url: ocrImages[i].url, no: i + 1, at: ocrImages[i].created_at }));
+}
+
+/** 「图片识别」：只识别勾选的图片，原文按原样追加到文本框（不做身份证字段提取） */
+async function ocrStartRaw() {
+  if (!ocrImages.length) {
+    toast("该任务暂无图片");
+    return;
+  }
+  // 必须显式勾选才识别：没勾选就一个请求都不发（既不误识别别的图，也不白占推理）
+  if (!ocrSelected.size) {
+    toast("请先勾选要识别的图片（单击缩略图勾选）");
+    return;
+  }
+  const targets = ocrComputeTargets(true);
+  const btn = document.getElementById("ocrRawBtn");
+  btn.disabled = true;
+  btn.textContent = "识别中...";
+  const ta = ocrShowRunning(`正在识别 ${targets.length} 张图片，请稍候...`);
+  try {
+    const resp = await authFetch('/api/ocr/recognize_raw', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image_urls: targets.map(x => x.url) }),
+    });
+    if (!resp.ok) {
+      const e = await resp.json().catch(() => ({}));
+      throw new Error(e.detail || '识别失败');
+    }
+    const data = await resp.json();
+    const results = data.results || [];
+    // 原文按识别顺序拼接，中间只留一个换行：不加"===== 图片 N ====="这类前后缀，
+    // 否则就跟图上的格式对不上了一行一行的原样了
+    const parts = targets.map((t, i) => {
+      const r = results[i];
+      return r && r.text ? r.text : `图片 ${t.no} 识别失败`;
+    });
+    ocrAppendResult(parts.join("\n"));
+    ocrClearRunning(ta);
+    toast("图片识别完成，已追加到文本框");
+  } catch (e) {
+    ocrClearRunning(ta);
+    toast("图片识别失败：" + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "图片识别";
+  }
+}
+
+/**
+ * 把新文本接着写到文本框末尾（不覆盖已有内容）。
+ * 两种识别结果因此可以并存；正文变了之后"行 ↔ 图片"的对应关系不再成立，所以清空映射。
+ */
+function ocrAppendResult(addText) {
+  const add = String(addText || "").trim();
+  if (!add) return;
+  const ta = document.getElementById("ocrSummary");
+  const merged = [ta ? ta.value.trim() : ocrGetCached(ocrTaskId).trim(), add]
+    .filter(Boolean)
+    .join("\n");
+  if (ta) {
+    ta.value = merged; // 原地追加：重建 textarea 会丢滚动位置和输入状态
+  } else {
+    ocrSetResultText(merged);
+  }
+  ocrvCacheWrite(ocrTaskId, merged, null);
+  // 有内容了就把「校验 / 复制结果」露出来
+  document.getElementById("ocrVerifyBtn").style.display = "inline-flex";
+  document.getElementById("ocrCopyBtn").style.display = "inline-flex";
+}
+
 let ocrResults = [];
 let ocrErrors = [];
 
-function ocrFillResult(targets, append) {
-  // 追加模式：旧文本从缓存取（每次输入都会实时写入缓存，是恒定数据源），
-  // 不从 DOM 读——识别期间文本框可能被锁定/重建
-  const prev = append ? (ocrGetCached(ocrTaskId) || "").trim() : "";
-  const lines = ocrResults.map((r, i) => {
-    if (!r) return `（图片 ${targets[i].no} 识别失败）`;
-    return r.name ? `${r.name} ${r.id_number}` : r.id_number;
-  });
-  ocrSetResultText([prev, ...lines].filter(Boolean).join("\n"));
-  ocrSaveText(); // 识别结果立即写入缓存，关闭弹窗后仍可回显
+function ocrFillResult(targets) {
+  // 一律"接着已有内容往下写"，不覆盖已有结果；
+  // 文本与"第几行对应第几张图"的映射都由 ocr-preview.js 的 ocrvResultBuild 一并维护
+  const text = ocrvResultBuild(ocrTaskId, targets, ocrResults, true);
+  ocrSetResultText(text);
   document.getElementById("ocrVerifyTip").style.display = "none";
 }
 

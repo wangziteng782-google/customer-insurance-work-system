@@ -19,6 +19,31 @@ _px_deps.require_deps = _dummy_require_deps
 from paddleocr import PaddleOCR
 
 
+def _resize_for_engine(image):
+    """识别前的缩放（身份证照片 600px、其它 1200px）
+
+    不只是提速：超大图直接喂给检测器会**一个框都出不来**，所以这一步是出框的前提。
+    """
+    from PIL import Image as PILImage
+    import numpy as np
+
+    if isinstance(image, PILImage.Image):
+        image = np.array(image)
+    if isinstance(image, np.ndarray):
+        h, w = image.shape[:2]
+        is_id_card = h > 1500 or w > 1500
+        max_size = 600 if is_id_card else 1200
+        min_size = 300
+        if h > max_size or w > max_size:
+            scale = max_size / max(h, w)
+            new_h, new_w = int(h * scale), int(w * scale)
+            if new_h < min_size or new_w < min_size:
+                scale = min_size / min(h, w)
+                new_h, new_w = int(h * scale), int(w * scale)
+            image = np.array(PILImage.fromarray(image).resize((new_w, new_h), PILImage.LANCZOS))
+    return image
+
+
 class OCREngine:
     """PaddleOCR 封装"""
 
@@ -53,28 +78,17 @@ class OCREngine:
             if not self.initialize():
                 return "", self._init_error
         try:
-            from PIL import Image as PILImage
-            import numpy as np
-            if isinstance(image, PILImage.Image):
-                image = np.array(image)
-            if isinstance(image, np.ndarray):
-                h, w = image.shape[:2]
-                is_id_card = h > 1500 or w > 1500
-                max_size = 600 if is_id_card else 1200
-                min_size = 300
-                if h > max_size or w > max_size:
-                    scale = max_size / max(h, w)
-                    new_h, new_w = int(h * scale), int(w * scale)
-                    if new_h < min_size or new_w < min_size:
-                        scale = min_size / min(h, w)
-                        new_h, new_w = int(h * scale), int(w * scale)
-                    image = np.array(PILImage.fromarray(image).resize((new_w, new_h), PILImage.LANCZOS))
+            image = _resize_for_engine(image)
             result = self.ocr.predict(image)
             text_lines = []
             for page in result:
                 texts = page.get("rec_texts", [])
                 scores = page.get("rec_scores", [])
-                boxes = page.get("det_boxes", [])
+                # 坐标键名随 PaddleOCR 版本变：新版在 dt_polys / rec_polys，老版本才叫 det_boxes。
+                # 读不到就等于"没有坐标" → 会退回按模型原始顺序一段一行、完全不做行合并，
+                # 表格里同一行的姓名和号码就会被拆成两行（实际踩到的坑）
+                boxes = (page.get("det_boxes") or page.get("dt_polys")
+                         or page.get("rec_polys") or page.get("rec_boxes") or [])
                 if boxes:
                     text_blocks = []
                     for i, (text, score, box) in enumerate(zip(texts, scores, boxes)):
@@ -90,14 +104,22 @@ class OCREngine:
                     if text_blocks:
                         current_row = [text_blocks[0]]
                         for block in text_blocks[1:]:
-                            last_block = current_row[-1]
-                            gap = block["top"] - last_block["bottom"]
-                            if gap > 15:
+                            # 同行判定：与「当前行整体」做垂直重叠，重叠超过较矮那个框的一半就算同一行。
+                            # 不能用固定像素阈值（原来是"上一个框底边到下一个框顶边 > 15px"）：
+                            # 图片会先缩到 600/1200px 再识别，此时字号只有 9~12px、相邻两行的
+                            # 间隙常常不到 10px，固定 15px 会把上下两行并成一行；而表格里
+                            # 姓名和号码字号不同、基线不同，同一个固定阈值又会把同一行拆成两行。
+                            row_top = min(b["top"] for b in current_row)
+                            row_bottom = max(b["bottom"] for b in current_row)
+                            overlap = min(row_bottom, block["bottom"]) - max(row_top, block["top"])
+                            shorter = min(row_bottom - row_top,
+                                          block["bottom"] - block["top"]) or 1
+                            if overlap >= shorter * 0.5:
+                                current_row.append(block)
+                            else:
                                 current_row.sort(key=lambda b: b["left"])
                                 text_lines.append(" ".join(b["text"] for b in current_row))
                                 current_row = [block]
-                            else:
-                                current_row.append(block)
                         if current_row:
                             current_row.sort(key=lambda b: b["left"])
                             text_lines.append(" ".join(b["text"] for b in current_row))
@@ -493,19 +515,21 @@ def _fetch_for_ocr(image_url: str) -> bytes:
     return resp.content
 
 
-def recognize_id_card(image_url: str):
-    """下载图片并识别身份证 — 主入口"""
+def _load_ocr_image(image_url: str):
+    """下载并解码图片（EXIF 转正 + 转 RGB），身份证识别 / 原样识别共用"""
     from PIL import Image as PILImage, ImageOps
-    import numpy as np
 
     image = PILImage.open(__import__('io').BytesIO(_fetch_for_ocr(image_url)))
     # 原图可能带 EXIF 方向（手机竖拍），PIL 不会自动转正
     image = ImageOps.exif_transpose(image)
     if image.mode != 'RGB':
         image = image.convert('RGB')
+    return image
 
-    engine = get_engine()
-    full_text, error = engine.recognize(image)
+
+def recognize_id_card(image_url: str):
+    """下载图片并识别身份证 — 主入口"""
+    full_text, error = get_engine().recognize(_load_ocr_image(image_url))
     if error:
         return None, error
 
@@ -524,6 +548,20 @@ def recognize_id_card(image_url: str):
         "age": calculate_age(birth_date),
         "area": get_area_info(id_number),
     }, None
+
+
+def recognize_raw(image_url: str):
+    """下载图片并原样输出 OCR 全文（不做身份证字段提取）
+
+    对应「图片识别」按钮：截图 / 证照等任意图片，把 OCR 认到的文字按阅读顺序原样返回，
+    让内勤自己核对、复制。与 recognize_id_card 只差最后一步不做字段提取。
+    """
+    full_text, error = get_engine().recognize(_load_ocr_image(image_url))
+    if error:
+        return None, error
+    if not full_text.strip():
+        return None, "未识别到文字"
+    return {"text": full_text}, None
 
 
 # ── 自检：只验证姓名/身份证号提取规则，不需要 OCR 引擎 ──

@@ -1,0 +1,87 @@
+/* ============================================================================
+ * 「图片 ↔ 识别结果」对照预览样式（配合 js/ocr-preview.js）
+ * ----------------------------------------------------------------------------
+ * 为什么单独一个文件：style.css 最近被外部整块还原过三次（Excel 弹窗加宽、
+ * 预览层按钮"看得见点不动"的修复都被带走过），这块单独放不容易被一起回退。
+ *
+ * 引入位置必须在 style.css **之后**：
+ *   这里既有新增规则，也有对 style.css 里旧规则的覆盖（如大图宽度、
+ *   关闭按钮位置），同为 .img-viewer.iv-ocr 前缀时靠"后出现者胜"生效。
+ * ========================================================================== */
+
+/* ── 布局：默认仍是单图大图；预览层加上 .iv-ocr 才变「左图右结果」 ── */
+/* --iv-side-w：结果栏宽度，唯一真源（要调宽度只改这一个值）。
+ * 必须声明在 .img-viewer 这一层：旋转/下载/下一张这些按钮是 .iv-side 的**兄弟节点**，
+ * 自定义属性只能沿祖先往下继承 —— 声明在 .iv-side 上的话，兄弟按钮读不到那个值，
+ * 表现出来就是"把结果栏改宽了，按钮却一动不动"。
+ * 下面 5 处引用它时都不再写回退值，避免两边回退值不一致而各按各的僵住。 */
+.img-viewer{--iv-side-w:510px}
+.img-viewer.iv-ocr{flex-direction:row;align-items:stretch;justify-content:flex-start;padding:0;gap:0;cursor:default}
+.iv-stage{position:relative;flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:64px 16px 76px;overflow:auto}
+.img-viewer.iv-ocr .img-viewer-tag{bottom:auto;top:16px;left:16px;transform:none}
+
+/* 大图按舞台宽度自适应：style.css 里那条 max-width:88vw 比舞台（总宽 − 结果栏）还宽，会横向溢出 */
+.img-viewer.iv-ocr .iv-stage img{max-width:100%;max-height:calc(100vh - 190px)}
+/* 旋转 90/270 后横图变竖图，宽高预算必须对调，否则会被裁掉 —— 看起来就像"旋转没反应"。
+ * 舞台宽 ≈ 100vw − --iv-side-w（结果栏）− 32（内边距），高的预算 ≈ 100vh − 190（上下留白 + 缩略图条）。 */
+.img-viewer.iv-ocr .iv-stage img.iv-rot-side{max-width:calc(100vh - 190px);max-height:calc(100vw - var(--iv-side-w) - 32px)}
+
+/* ── 右侧结果栏 ── */
+.iv-side{width:var(--iv-side-w);flex:none;min-width:0;background:#fff;display:flex;flex-direction:column;border-left:1px solid var(--gray-200)}
+/* 右内边距给右上角的关闭按钮让位，避免标题被压住 */
+/* min-height + flex 居中：给右上角的关闭按钮一个确定的行高可对齐 */
+.iv-side-head{flex:none;min-height:41px;display:flex;align-items:center;padding:10px 56px 10px 14px;border-bottom:1px solid var(--gray-200);background:#fafafa;font-size:15px;font-weight:600;color:var(--gray-800)}
+.iv-side-body{flex:1;min-height:0;overflow:auto;padding:8px}
+.iv-empty{padding:28px 12px;text-align:center;color:var(--gray-500);font-size:14px;line-height:2}
+.iv-empty span{font-size:13px;color:var(--gray-400)}
+
+/* 一行 = 一张图的结果；.on 就是"当前这张图"那一行 */
+.iv-line{display:flex;gap:8px;align-items:flex-start;padding:8px 8px;border-radius:6px;border-left:3px solid transparent;cursor:pointer;font-size:15px;line-height:1.55}
+.iv-line:hover{background:var(--gray-50)}
+.iv-line.on{background:var(--blue-50);border-left-color:var(--blue);font-weight:600}
+.iv-line.fail .iv-text{color:#cf1322}
+.iv-line.extra{opacity:.5}
+.iv-line.placeholder{cursor:default;font-weight:400}
+.iv-no{flex:none;min-width:38px;padding-top:3px;color:var(--gray-500);font-size:13px}
+.iv-line.on .iv-no{color:var(--blue)}
+.iv-text{flex:1;min-width:0;word-break:break-all}
+
+/* ── 顶部按钮：关闭放到结果栏右边，旋转/下载留在图片区右上角 ── */
+.img-viewer.iv-ocr .img-viewer-rotate{right:calc(var(--iv-side-w) + 76px)}
+.img-viewer.iv-ocr .img-viewer-dl{right:calc(var(--iv-side-w) + 128px)}
+/* 关闭按钮不再是浮在图上的圆钮：占满标题条右端预留的 56px 槽位，
+   方角 + 透明底，和标题条拼成一条 —— 就是面板自己的 ×（悬停才有底色） */
+.img-viewer.iv-ocr .img-viewer-close{top:0;right:0;width:56px;height:41px;border-radius:0;background:transparent;color:var(--gray-600);font-size:22px;box-shadow:none}
+.img-viewer.iv-ocr .img-viewer-close:hover{background:var(--gray-100);color:#cf1322}
+
+/* ── 上一张 / 下一张 ── */
+.iv-nav{position:absolute;top:50%;transform:translateY(-50%);width:44px;height:64px;border:0;border-radius:8px;background:rgba(255,255,255,.15);color:#fff;font-size:30px;line-height:1;cursor:pointer;display:none;place-items:center}
+.iv-nav:hover:not(:disabled){background:rgba(255,255,255,.32)}
+.iv-nav:disabled{opacity:.25;cursor:not-allowed}
+.iv-nav.prev{left:14px}
+.iv-nav.next{right:calc(var(--iv-side-w) + 14px)}
+.img-viewer.iv-ocr .iv-nav{display:grid}
+/* 只有一张图时，左右切换直接不显示（灰着摆在那里会让人以为按钮坏了） */
+.img-viewer.iv-ocr:not(.iv-multi) .iv-nav{display:none}
+
+/* ── 关键修复：按钮必须显式抬到舞台之上 ──
+ * .iv-stage 是 position:relative（给缩略图条当定位基准），DOM 又排在按钮之后，
+ * 两者都是 z-index:auto 的定位元素 → 后画的舞台会盖住前面的按钮，
+ * 表现就是"看得见、点不动"（关闭/旋转/下载/左右切换全都中招）。 */
+.img-viewer.iv-ocr .img-viewer-close,
+.img-viewer.iv-ocr .img-viewer-rotate,
+.img-viewer.iv-ocr .img-viewer-dl,
+.img-viewer.iv-ocr .iv-nav{position:absolute;z-index:5}
+
+/* ── 底部缩略图条：点哪张跳哪张 ── */
+.iv-thumbs{position:absolute;left:0;right:0;bottom:8px;display:none;gap:6px;padding:6px 10px;overflow-x:auto;overflow-y:hidden}
+.iv-thumb{flex:none;width:54px;height:54px;padding:0;border:2px solid transparent;border-radius:6px;background:transparent;cursor:pointer;overflow:hidden}
+.iv-thumb img{width:100%;height:100%;max-width:none;max-height:none;object-fit:cover;border-radius:4px;box-shadow:none;transition:none}
+.iv-thumb.on{border-color:var(--blue)}
+
+/* ── 这两块的滚动条加粗加深：Win11 默认那条只有两三个像素，鼠标很难抓 ── */
+:is(.iv-side-body,.iv-thumbs){scrollbar-width:auto;scrollbar-color:#a9b1bb #eef0f3}
+:is(.iv-side-body,.iv-thumbs)::-webkit-scrollbar{width:14px;height:14px}
+:is(.iv-side-body,.iv-thumbs)::-webkit-scrollbar-track{background:#eef0f3}
+:is(.iv-side-body,.iv-thumbs)::-webkit-scrollbar-thumb{background:#a9b1bb;border:2px solid #eef0f3;border-radius:8px}
+:is(.iv-side-body,.iv-thumbs)::-webkit-scrollbar-thumb:hover{background:#7d8794}
