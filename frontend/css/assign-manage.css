@@ -1,0 +1,100 @@
+/* ============================================================================
+ * 人员筛选管理弹窗（配合 js/assign-manage.js）
+ * ----------------------------------------------------------------------------
+ * 为什么单独一个文件：style.css 最近被外部整块还原过几次（表格预览加宽、
+ * 对照预览那套都中过招），这块单独放不容易被一起回退。
+ *
+ * 引入位置必须在 style.css **之后**：这里既写新规则，也要覆盖 style.css 里
+ * 已有的 .assign-* 旧样式，以及 .filter-select / .multi-select 的固定 170px 宽度。
+ *
+ * 原则：只改外观与排布，不动任何 id、onclick 与数据逻辑。
+ * ========================================================================== */
+
+/* ── 弹窗整体 ── */
+/* 原来的 min(680px) 放不下"两列表单 + 一长串客服名"，稍微放宽 */
+#assignManageMask .modal{width:min(780px,94vw)}
+#assignManageMask .modal-head{padding:16px 22px}
+/* style.css 的 .modal-sub 是等宽字体（当初为别的弹窗写的），中文副标题看着别扭 */
+#assignManageMask .modal-sub{font-family:inherit;line-height:1.6;margin-top:4px}
+#assignManageMask .modal-body{padding:16px 22px 18px;display:flex;flex-direction:column;gap:14px}
+
+/* ── 表单：带字段名的两列网格 ──
+   原来是「一行流式排布」，三个控件都没有标签，扫一眼不知道哪个是内勤、哪个是保司 */
+.assign-form{display:grid;grid-template-columns:1fr 1fr;gap:12px 14px;padding:14px;border:1px solid var(--line);border-radius:var(--r-md);background:var(--gray-50)}
+.af-field{display:flex;flex-direction:column;gap:5px;min-width:0}
+.af-field-wide{grid-column:1 / -1}
+.af-label{font-size:var(--fs-xs);color:var(--gray-600);font-weight:600}
+/* 控件撑满单元格：style.css 里下拉/多选都是写死的 170px，在网格里会左右不对齐 */
+.assign-form .filter-select,
+.assign-form .multi-select,
+.assign-form .multi-select-trigger{width:100%}
+.assign-form .filter-select,
+.assign-form .multi-select-trigger{height:36px}
+
+/* 负责客服：勾选框 + 多选并排 */
+.af-cs{display:flex;align-items:center;gap:10px;min-width:0}
+.af-cs .multi-select{flex:1;min-width:0}
+.assign-all-cb{flex:none;display:inline-flex;align-items:center;gap:6px;height:36px;padding:0 12px;border:1px dashed var(--gray-300);border-radius:var(--r-sm);background:#fff;font-size:var(--fs-sm);color:var(--gray-700);cursor:pointer;white-space:nowrap;transition:all .15s}
+.assign-all-cb:hover{border-color:var(--blue-300);color:var(--blue-600)}
+.assign-all-cb:has(input:checked){border-style:solid;border-color:var(--blue);background:var(--blue-50);color:var(--blue-600);font-weight:600}
+.assign-all-cb input{width:15px;height:15px;cursor:pointer;accent-color:var(--blue)}
+
+/* 操作区：主操作（保存）放最右，提示语占左边 */
+.af-actions{grid-column:1 / -1;display:flex;justify-content:flex-end;align-items:center;gap:8px}
+.af-actions .btn{height:34px;padding:0 18px}
+.af-hint{margin-right:auto;font-size:var(--fs-xs);color:var(--gray-500)}
+
+/* ── 客服多选面板 ──
+   1) 撑满触发器宽度，长姓名不再被 180px 截断
+   2) 必须限高内滚：.modal-body 是 overflow:auto，不限高的话面板会被弹窗底边裁掉 */
+.assign-form .multi-select-panel{top:calc(100% + 4px);left:0;width:100%;min-width:240px;max-height:240px;overflow:auto;padding:4px}
+.assign-form .multi-option{padding:9px 10px;border-radius:var(--r-xs)}
+.assign-form .multi-option:hover{background:var(--blue-50)}
+.assign-form .multi-option .chk{width:15px;height:15px}
+.assign-form .multi-option input:checked+.chk:after{left:1.5px;top:-0.5px;font-size:11px}
+
+/* ── 已配置列表：左栏点人、右栏看这个人的绑定关系 ──
+   原来把所有内勤的组一次性铺开，人一多就得整屏滚着找；改成"点谁看谁"。
+   两栏是一个 grid，整体一起滚（左栏通常短，跟不跟得上都无所谓） */
+.assign-list{display:grid;grid-template-columns:200px 1fr;gap:12px;align-items:start;max-height:min(50vh,460px);overflow:auto;padding-right:4px}
+.assign-people{display:flex;flex-direction:column;gap:3px;padding:6px;border:1px solid var(--line);border-radius:var(--r-md);background:#fff}
+.assign-people-head{padding:5px 8px 7px;display:flex;align-items:center;gap:8px;font-size:var(--fs-xs);font-weight:600;color:var(--gray-600)}
+.ap-item{display:flex;align-items:center;gap:8px;width:100%;padding:7px 8px;border:1px solid transparent;border-radius:var(--r-sm);background:transparent;font-family:inherit;font-size:var(--fs-sm);color:var(--gray-700);cursor:pointer;text-align:left;transition:all .12s}
+.ap-item:hover{background:var(--gray-50)}
+.ap-item.on{border-color:var(--blue);background:var(--blue-50);color:var(--blue-600);font-weight:600}
+.ap-avatar{flex:none;width:22px;height:22px;border-radius:50%;background:var(--gray-200);color:var(--gray-700);font-size:var(--fs-xs);display:grid;place-items:center}
+.ap-item.on .ap-avatar{background:var(--blue);color:#fff}
+.ap-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ap-count{flex:none;font-size:var(--fs-xs);color:var(--gray-500)}
+.ap-item.on .ap-count{color:var(--blue-600)}
+.assign-detail{min-width:0;border:1px solid var(--line);border-radius:var(--r-md);overflow:hidden;background:#fff}
+.assign-detail-head{display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--gray-50);border-bottom:1px solid var(--line);font-size:var(--fs-sm);font-weight:600;color:var(--gray-800)}
+.assign-people-head .ag-count,.assign-detail-head .ag-count{margin-left:auto;font-weight:400;font-size:var(--fs-xs);color:var(--gray-500)}
+.assign-row{display:flex;align-items:center;gap:12px;padding:10px 14px;border-bottom:1px solid var(--line);font-size:var(--fs-sm);transition:background .12s}
+.assign-row:last-child{border-bottom:0}
+.assign-row:hover{background:var(--gray-50)}
+.assign-co{flex:none;min-width:110px;font-weight:600;color:var(--gray-800)}
+.assign-cs{flex:1;min-width:0;color:var(--gray-600);line-height:1.6;word-break:break-all}
+/* 操作按钮平时淡着，鼠标移到这一行就很清楚：既不喧宾夺主，也不会找不到 */
+.assign-ops{flex:none;display:flex;gap:6px;opacity:.5;transition:opacity .12s}
+.assign-row:hover .assign-ops{opacity:1}
+.af-btn{height:26px;padding:0 10px;font-size:var(--fs-xs)}
+.af-btn.af-del{color:#cf1322;border-color:#ffccc7}
+.af-btn.af-del:hover{border-color:#cf1322;background:#fff2f0}
+
+/* 列表为空（.assign-list 是两栏 grid，空态要横跨整行） */
+.assign-empty{grid-column:1 / -1;padding:26px 12px;text-align:center;color:var(--gray-500);font-size:var(--fs-sm);line-height:1.9}
+.assign-empty b{color:var(--gray-700)}
+
+/* 这两块的滚动条加粗加深（同 ocr-preview.css）：默认那条只有两三像素，鼠标很难抓 */
+:is(.assign-list,.assign-form .multi-select-panel){scrollbar-width:auto;scrollbar-color:#a9b1bb #eef0f3}
+:is(.assign-list,.assign-form .multi-select-panel)::-webkit-scrollbar{width:14px;height:14px}
+:is(.assign-list,.assign-form .multi-select-panel)::-webkit-scrollbar-track{background:#eef0f3}
+:is(.assign-list,.assign-form .multi-select-panel)::-webkit-scrollbar-thumb{background:#a9b1bb;border:2px solid #eef0f3;border-radius:8px}
+:is(.assign-list,.assign-form .multi-select-panel)::-webkit-scrollbar-thumb:hover{background:#7d8794}
+
+/* 窄屏（弹窗缩到 94vw 时）两列挤不下 → 表单和列表都塌成一列 */
+@media (max-width:640px){
+  .assign-form{grid-template-columns:1fr}
+  .assign-list{grid-template-columns:1fr}
+}

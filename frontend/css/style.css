@@ -652,3 +652,17 @@ h1{font-size:var(--fs-lg);margin:0;padding-left:8px;border-left:3px solid var(--
 .fp-filter-list .fp-none{color:var(--gray-400);font-size:var(--fs-xs);padding:6px 0;text-align:center}
 .fp-filter-sort{display:flex;gap:6px;margin-top:7px}
 .fp-filter-sort .fp-mini{flex:1}
+
+/* ========== 人员筛选管理弹窗（配合 js/assign-manage.js） ========== */
+/* 表单一行流式排布：内勤/保司下拉 + 全部客服勾选 + 客服多选 + 保存/清空 */
+.assign-form{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px;padding:10px 12px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--gray-50)}
+.assign-all-cb{display:inline-flex;align-items:center;gap:5px;font-size:var(--fs-sm);color:var(--gray-700);cursor:pointer;white-space:nowrap}
+.assign-all-cb input{cursor:pointer}
+/* 列表：按内勤分组，组内一行一个保司 */
+.assign-group{border:1px solid var(--line);border-radius:var(--r-sm);overflow:hidden}
+.assign-group-head{padding:7px 12px;background:var(--gray-50);font-size:var(--fs-sm);font-weight:600;color:var(--gray-800);border-bottom:1px solid var(--line)}
+.assign-row{display:flex;align-items:center;gap:10px;padding:7px 12px;border-bottom:1px solid var(--line);font-size:var(--fs-sm)}
+.assign-row:last-child{border-bottom:0}
+.assign-co{flex:none;min-width:90px;font-weight:500;color:var(--gray-800)}
+.assign-cs{flex:1;min-width:0;color:var(--gray-600);word-break:break-all}
+.assign-ops{flex:none;display:flex;gap:6px}

@@ -40,6 +40,8 @@ const RETURNED_STATUSES = [2, 7];
 let allTasks = [];
 let allAllTasks = [];
 let allUsers = [];
+let allUserRows = [];   // 全量用户行 {id, display_name, role}：人员筛选表单/视图收窄都要用
+let allAssignments = []; // 内勤负责关系（人员筛选）：[{operator_id, operator_name, insurance_company, user_id, user_name}]
 let allCompanies = [];
 let currentCompany = "全部";
 let selected = [];
@@ -80,7 +82,7 @@ async function loadTasks(company, search) {
   allTasks = (company && company !== '全部')
     ? normalized.filter(t => t._insuranceCompany === company)
     : normalized;
-  await Promise.all([loadCompanies(), loadTagBindings()]);
+  await Promise.all([loadCompanies(), loadTagBindings(), loadAssignments()]);
 }
 
 // 当前用户全部任务标签绑定：taskId -> [{tt_id, tag_id, name, color}]
@@ -104,9 +106,35 @@ async function loadUsers() {
     const resp = await authFetch('/api/users');
     if (!resp.ok) return;
     const users = await resp.json();
+    allUserRows = users;
     // 客服人员筛选：客服(1) + 客服主管(11) 都是提单人，只显示名称不显示角色
     allUsers = users.filter(u => u.role === 1 || u.role === 11).map(u => u.display_name);
   } catch {}
+}
+
+// 内勤负责关系（列表刷新时一起拉，视图收窄和管理弹窗共用）
+async function loadAssignments() {
+  try {
+    const r = await authFetch('/api/assignments');
+    if (!r.ok) throw new Error();
+    allAssignments = await r.json();
+  } catch { allAssignments = []; }
+}
+
+// ── 人员筛选收窄 ──
+// 三条规则：没配置关系 = 看全部（零配置不至于"瞎掉"，客服登 index 也不受影响）；
+// 配置了 = 只看自己负责的；can_manage_dropdowns=1 = 不收窄（主管背了任务也能看全局）
+function myScopeRows() {
+  const me = JSON.parse(localStorage.getItem('currentUser') || '{}');
+  if (!me.id || me.can_manage_dropdowns) return null;
+  const rows = allAssignments.filter(a => a.operator_id === me.id);
+  return rows.length ? rows : null;
+}
+
+// 任务在不在负责范围内：保司相等 && (该组是「全部」 || 客服ID相等)。匹配只走 ID，冗余姓名仅显示
+function taskInScope(t, rows) {
+  return rows.some(a => a.insurance_company === t._insuranceCompany
+    && (a.user_id === null || a.user_id === t.userId));
 }
 
 function countImagesFromMessages(messages) {
@@ -146,6 +174,7 @@ function normalizeTask(t, comments, images, messages) {
     _insuranceCompany: t.insurance_company || "未知",
     company: t.customer_company || t.insurance_company || "未知",
     user: t.creator || "未知",
+    userId: t.user_id ?? null,           // 人员筛选收窄按 ID 匹配（姓名只做显示）
     time: fmtTs(t.created_at),          // head-row2 展示：任务创建时间
     lastMsgAt: fmtTs(lastMsgAt),        // 最新消息时间（= 通常意义上的"更新时间"）
     updated_at: t.updated_at || t.created_at || "",
@@ -305,14 +334,23 @@ function render() {
     d = { tasks: allTasks.filter(t => t._insuranceCompany === currentCompany) };
   }
 
+  // 人员筛选收窄：登录内勤配置了负责关系 → 只看自己负责的（保司匹配 + 该组全部/客服ID匹配）
+  const scopeRows = myScopeRows();
+  if (scopeRows) d.tasks = d.tasks.filter(t => taskInScope(t, scopeRows));
+
   document.getElementById("companyTitle").textContent = currentCompany;
   document.getElementById("companyTitle2").textContent = currentCompany;
   document.getElementById("userTotal").textContent = allUsers.length + " 个用户";
   document.getElementById("recordTotal").textContent = d.tasks.length + " 条记录";
 
-  // 人员多选面板
+  // 人员多选面板（收窄时只列自己负责的客服；「全部」组无法枚举保司下的客服，选项是超集，无害）
+  const panelUsers = scopeRows
+    ? allUserRows.filter(u => (u.role === 1 || u.role === 11) && scopeRows.some(a =>
+        (currentCompany === "全部" || a.insurance_company === currentCompany) &&
+        (a.user_id === null || a.user_id === u.id))).map(u => u.display_name)
+    : allUsers;
   const panel = document.getElementById("userSelectPanel");
-  panel.innerHTML = allUsers.map(u => `
+  panel.innerHTML = panelUsers.map(u => `
     <label class="multi-option">
       <input type="checkbox" ${selected.includes(u) ? "checked" : ""} onchange="toggleUser('${u}')">
       <span class="chk"></span>${u}
@@ -1870,6 +1908,7 @@ const DROPDOWN_CATEGORY_LABEL = '保险公司';
  */
 async function syncDropdownEntry() {
   const btn = document.getElementById('dropdownManageBtn');
+  const assignBtn = document.getElementById('assignManageBtn');
   if (!btn) return;
   const me = JSON.parse(localStorage.getItem('currentUser') || '{}');
   let allowed = !!me.can_manage_dropdowns;
@@ -1881,6 +1920,8 @@ async function syncDropdownEntry() {
     }
   } catch (e) { /* 后端不可用：沿用本地快照 */ }
   btn.style.display = allowed ? 'block' : 'none';
+  // 人员筛选管理与下拉选项管理同一个权限位，顺带一起显隐
+  if (assignBtn) assignBtn.style.display = allowed ? 'block' : 'none';
 }
 
 syncDropdownEntry();
@@ -1905,6 +1946,10 @@ function dropdownRow(o) {
       <button class="btn" style="height:26px;padding:0 10px;font-size:var(--fs-xs)" onclick="doDeleteDropdown(${o.id})">删除</button>
     </div>`;
 }
+
+// 人员筛选管理（内勤负责关系弹窗）的代码在 js/assign-manage.js —— app.js 已经太长，
+// 弹窗又是自成一体的 CRUD，拆出去只通过全局函数 openAssignManage 入口进出。
+// 视图收窄（myScopeRows / taskInScope / render 里的过滤）留在 app.js，因为和渲染主流程交织。
 
 // ── 个人标签 ──
 

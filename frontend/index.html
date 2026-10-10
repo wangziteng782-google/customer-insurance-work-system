@@ -9,6 +9,8 @@
 <!-- 图片对照识别结果的样式单独一个文件（style.css 被整块回退过几次，分开不易被带走）；
      必须在 style.css 之后引入：里面既有新增规则，也要覆盖 style.css 的旧规则 -->
 <link rel="stylesheet" href="css/ocr-preview.css?v=7">
+<!-- 人员筛选管理弹窗样式：同样单独一个文件（理由同上），必须在 style.css 之后 -->
+<link rel="stylesheet" href="css/assign-manage.css?v=2">
 <script>
   if (!localStorage.getItem('token')) location.href = 'login.html';
 </script>
@@ -40,6 +42,13 @@
       <button class="btn" style="width:100%;height:30px;font-size:var(--fs-xs);color:var(--gray-500)" onclick="openDropdownManage()">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><path d="M12 5v14M5 12h14"/></svg>
         下拉选项管理
+      </button>
+    </div>
+    <!-- 人员筛选管理入口：默认隐藏，由 app.js 按 can_manage_dropdowns 显示（配置内勤负责哪些保司的哪些客服） -->
+    <div id="assignManageBtn" style="display:none;padding:10px 16px;border-top:1px solid var(--line)">
+      <button class="btn" style="width:100%;height:30px;font-size:var(--fs-xs);color:var(--gray-500)" onclick="openAssignManage()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        人员筛选管理
       </button>
     </div>
   </aside>
@@ -227,6 +236,54 @@
     <div class="modal-foot">
       <div class="foot-actions">
         <button class="btn" onclick="closeDropdownManage()">关闭</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 人员筛选管理弹窗（仅 can_manage_dropdowns=1）：配置内勤负责对接哪个保司下的哪些客服 -->
+<div class="modal-mask" id="assignManageMask" style="display:none">
+  <div class="modal" style="width:min(680px,94vw)">
+    <div class="modal-head">
+      <div>
+        <div class="modal-title">人员筛选管理</div>
+        <div class="modal-sub">配置内勤负责对接哪个保司下的客服；配置后该内勤登录只能看到自己负责的任务</div>
+      </div>
+      <button class="close" onclick="closeAssignManage()">×</button>
+    </div>
+    <div class="modal-body">
+      <!-- 添加 / 编辑共用一个表单：选好内勤 + 保司 + 客服（或勾「全部」）后保存，同组自动覆盖。
+           这里只是加了字段名与分栏容器（.af-*），id / onclick / 数据逻辑一个字都没动 -->
+      <div class="assign-form">
+        <div class="af-field">
+          <label class="af-label" for="assignOperator">内勤</label>
+          <select class="filter-select" id="assignOperator"></select>
+        </div>
+        <div class="af-field">
+          <label class="af-label" for="assignCompany">保险公司</label>
+          <select class="filter-select" id="assignCompany"></select>
+        </div>
+        <div class="af-field af-field-wide">
+          <label class="af-label">负责客服</label>
+          <div class="af-cs">
+            <label class="assign-all-cb"><input type="checkbox" id="assignAll" onchange="onAssignAllChange()">全部客服</label>
+            <div class="multi-select" id="assignCsSelect">
+              <div class="multi-select-trigger" onclick="toggleAssignCsPanel()"><span id="assignCsLabel">选择客服</span></div>
+              <div class="multi-select-panel" id="assignCsPanel"></div>
+            </div>
+          </div>
+        </div>
+        <div class="af-actions">
+          <span class="af-hint">同一内勤 + 同一保险公司重复保存会覆盖原配置</span>
+          <button class="btn" onclick="resetAssignForm()">清空</button>
+          <button class="btn primary" onclick="saveAssignGroup()">保存</button>
+        </div>
+      </div>
+      <div id="assignManageList" class="assign-list"></div>
+    </div>
+    <div class="modal-foot">
+      <div class="foot-actions">
+        <button class="btn" onclick="closeAssignManage()">关闭</button>
       </div>
     </div>
   </div>
@@ -459,6 +516,8 @@
 <script src="js/app.js?v=12"></script>
 <!-- 图片对照识别结果：必须在 app.js 之后（要读它的全局变量与工具函数） -->
 <script src="js/ocr-preview.js?v=5"></script>
+<!-- 人员筛选管理（内勤负责关系弹窗）：必须在 app.js 之后（共用它的全局与工具函数） -->
+<script src="js/assign-manage.js?v=3"></script>
 <script>
   // 填充登录用户信息
   var u = JSON.parse(localStorage.getItem('currentUser') || '{}');

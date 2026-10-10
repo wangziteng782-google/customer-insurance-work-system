@@ -99,3 +99,21 @@ class TaskTag(Base):
         Index("idx_user_task", "user_id", "task_id"),
         Index("idx_task", "task_id"),
     )
+
+
+class OperatorAssignment(Base):
+    """内勤负责关系：一行 = (内勤, 保司, 客服)；user_id 为 NULL = 该保司下全部客服。
+    姓名冗余自 users 表（业务上姓名不会改），只做显示——匹配逻辑一律走 ID。"""
+    __tablename__ = "operator_assignments"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    operator_id = Column(BigInteger, nullable=False, comment="内勤ID（users.id）")
+    operator_name = Column(String(50), nullable=True, comment="内勤姓名（冗余，仅显示）")
+    insurance_company = Column(String(50), nullable=False, comment="保险公司")
+    user_id = Column(BigInteger, nullable=True, comment="客服ID（users.id），NULL=该保司下全部客服")
+    user_name = Column(String(50), nullable=True, comment="客服姓名（冗余，仅显示）")
+    created_at = Column(DateTime, server_default=func.now())
+
+    __table_args__ = (
+        Index("idx_op_company", "operator_id", "insurance_company"),
+    )
